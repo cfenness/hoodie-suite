@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1 |
 | Columns | 27 |
-| Storage | — |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | accumulating (merge; bucketed if migrated) |
@@ -51,4 +51,4 @@
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `rights.py:609` | `write_accumulate` | accumulating (merge; bucketed if migrated) | no |
+| `rights.py:620` | `write_accumulate` | accumulating (merge; bucketed if migrated) | no |

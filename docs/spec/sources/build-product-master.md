@@ -8,7 +8,7 @@
 |---|---|
 | Registry id | `build-product-master` |
 | Runs | `import build_product_master as m; m.build()` |
-| Module | `unifyd/build_product_master.py` — 868 lines |
+| Module | `unifyd/build_product_master.py` — 923 lines |
 | Cadence | every 12h |
 | Enabled | **yes** |
 | Executor class | `build` |
@@ -28,7 +28,7 @@
 _No literal endpoint constant in `build_product_master.py`._ The transport is either inherited from a shared fetcher or built at run time — read the module.
 
 
-**Depends on** `category_tree`, `class_type`, `dict_apply`, `hoodie_ids`, `identity_resolve`, `master_apply`, `normalize`, `placeholders`, `precleanse`, `price_signal`, `sku_match`, `upc`, `warehouse`, `wb_views`
+**Depends on** `category_tree`, `class_type`, `dict_apply`, `hoodie_ids`, `identity_resolve`, `master_apply`, `normalize`, `placeholders`, `precleanse`, `price_signal`, `provenance`, `sku_match`, `upc`, `warehouse`, `wb_views`
 
 
 ## 3. What it lands

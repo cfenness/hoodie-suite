@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1,180,839 |
 | Columns | 14 |
-| Storage | — |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | — |

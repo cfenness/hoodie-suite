@@ -3,7 +3,7 @@
 |  |  |
 |---|---|
 | Status | landed |
-| Rows | 305,643 |
+| Rows | 409,882 |
 | Columns | 29 |
 | Storage | partitioned |
 | Partitions | 12 |

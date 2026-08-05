@@ -4,14 +4,14 @@
 |---|---|
 | Status | landed |
 | Rows | 2,160,806 |
-| Columns | 16 |
-| Storage | — |
-| Partitions | — |
-| Schema drift | — |
+| Columns | 17 |
+| Storage | bucketed |
+| Partitions | 256 |
+| Schema drift | uniform in sample |
 | Write mode | — |
 | Declared in `table_spec.py` | yes |
 | Written by sources | `ubereats-full`, `build-ue-catalog` |
-| URI | `s3://hoodie-suite-warehouse/warehouse/ubereats_products.parquet` |
+| URI | `manifest: _manifest/ubereats_products.json` |
 
 
 ## Columns
@@ -34,3 +34,4 @@
 | `in_stock` | `BOOLEAN` |
 | `stock_label` | `VARCHAR` |
 | `category` | `INTEGER` |
+| `__b` | `VARCHAR` |

@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 9,567 |
 | Columns | 12 |
-| Storage | — |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full rebuild, layout-preserving) |

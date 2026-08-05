@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 1,732 |
 | Columns | 18 |
-| Storage | — |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -43,4 +43,4 @@
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
 | `master_ttb.py:133` | `write_parquet` | flat (full overwrite) | no |
-| `server.py:3477` | `write_parquet` | flat (full overwrite) | no |
+| `server.py:3574` | `write_parquet` | flat (full overwrite) | no |

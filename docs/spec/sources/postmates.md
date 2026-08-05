@@ -8,7 +8,7 @@
 |---|---|
 | Registry id | `postmates` |
 | Runs | `import os; os.environ['LADDER_MAX_RUNG']='impersonate'; import ue_catalog as m; m.main(['--site','postmates','--shard',os.environ.get('UE_SHARD','0/8')])` |
-| Module | `unifyd/ue_catalog.py` — 1009 lines |
+| Module | `unifyd/ue_catalog.py` — 1019 lines |
 | Cadence | daily |
 | Enabled | **yes** |
 | Executor class | `headless` |
@@ -38,32 +38,7 @@
 
 ### `postmates_products_parts`
 
-6,040 rows · 21 columns · 1 partitions
-
-
-| column | type |
-|---|---|
-| `store_uuid` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `item_uuid` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `gtin` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `list_price` | `DOUBLE` |
-| `promo` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `abv` | `DOUBLE` |
-| `in_stock` | `BOOLEAN` |
-| `stock_label` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `section` | `VARCHAR` |
-| `subsection` | `VARCHAR` |
-| `section_name` | `VARCHAR` |
-| `subsection_name` | `VARCHAR` |
-| `category_path` | `VARCHAR` |
+_Not in the live capture — the code writes it but the table was not scanned._
 
 
 ## 4. `ue_catalog.py` — the module's own account

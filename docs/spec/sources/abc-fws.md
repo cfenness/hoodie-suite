@@ -38,7 +38,7 @@
 
 ### `retail_observations`
 
-59,077,605 rows · 19 columns · 4,296 partitions · **3 different schemas in a 6-partition sample — this table has drifted**
+60,619,371 rows · 19 columns · 4,331 partitions · **2 different schemas in a 6-partition sample — this table has drifted**
 
 
 | column | type |

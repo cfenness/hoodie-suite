@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 0 |
 | Columns | 9 |
-| Storage | — |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -33,5 +33,5 @@
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `server.py:3446` | `write_parquet` | flat (full overwrite) | no |
-| `server.py:3469` | `write_parquet` | flat (full overwrite) | no |
+| `server.py:3543` | `write_parquet` | flat (full overwrite) | no |
+| `server.py:3566` | `write_parquet` | flat (full overwrite) | no |

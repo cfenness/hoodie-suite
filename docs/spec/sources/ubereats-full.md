@@ -38,7 +38,7 @@
 
 ### `ubereats_products`
 
-2,160,806 rows · 16 columns
+2,160,806 rows · 17 columns
 
 
 | column | type |
@@ -59,6 +59,7 @@
 | `in_stock` | `BOOLEAN` |
 | `stock_label` | `VARCHAR` |
 | `category` | `INTEGER` |
+| `__b` | `VARCHAR` |
 
 
 ## 4. `ue_crawl.py` — the module's own account

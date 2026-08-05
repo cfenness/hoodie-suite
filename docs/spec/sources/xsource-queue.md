@@ -8,7 +8,7 @@
 |---|---|
 | Registry id | `xsource-queue` |
 | Runs | `import xsource_queue as m; m.build()` |
-| Module | `unifyd/xsource_queue.py` — 334 lines |
+| Module | `unifyd/xsource_queue.py` — 343 lines |
 | Cadence | every 168h |
 | Enabled | **yes** |
 | Executor class | `build` |

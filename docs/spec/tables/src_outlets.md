@@ -4,14 +4,14 @@
 |---|---|
 | Status | landed |
 | Rows | 1,916,357 |
-| Columns | 28 |
-| Storage | — |
-| Partitions | — |
-| Schema drift | — |
+| Columns | 29 |
+| Storage | bucketed |
+| Partitions | 16 |
+| Schema drift | uniform in sample |
 | Write mode | accumulating (merge; bucketed if migrated), flat (full rebuild, layout-preserving) |
 | Declared in `table_spec.py` | no — schema is whatever the writer emits |
 | Written by sources | `geocode`, `aggregator-geo`, `fast-geo`, `geo`, `ubereats-sitemap`, `postmates-sitemap`, `build-outlets` |
-| URI | `s3://hoodie-suite-warehouse/warehouse/src_outlets.parquet` |
+| URI | `manifest: _manifest/src_outlets.json` |
 
 
 ## Columns
@@ -46,6 +46,7 @@
 | `geo_cell` | `VARCHAR` |
 | `county_fips` | `VARCHAR` |
 | `geo_precision` | `VARCHAR` |
+| `__b` | `VARCHAR` |
 
 
 ## Writers

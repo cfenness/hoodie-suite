@@ -61,7 +61,7 @@ _No literal endpoint constant in `master_ttb.py`._ The transport is either inher
 | `tier` | `BIGINT` |
 
 
-**Written by** `master_ttb.py:133` (write_parquet), `server.py:3477` (write_parquet)
+**Written by** `master_ttb.py:133` (write_parquet), `server.py:3574` (write_parquet)
 
 
 ## 4. `master_ttb.py` — the module's own account

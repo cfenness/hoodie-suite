@@ -1,8 +1,8 @@
 {
- "captured_at": "2026-08-05T12:49:49Z",
+ "captured_at": "2026-08-05T15:32:17Z",
  "counts_included": true,
- "n_landed": 143,
- "n_tables": 177,
+ "n_landed": 140,
+ "n_tables": 172,
  "tables": {
   "<dynamic>": {
    "columns": [],
@@ -171,6 +171,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1609448,
    "table": "_stage_product",
    "uri": "s3://hoodie-suite-warehouse/warehouse/_stage_product.parquet"
@@ -219,6 +220,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 278510,
    "table": "ab_outlets",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ab_outlets.parquet"
@@ -255,6 +257,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 14098,
    "table": "abc_catalog",
    "uri": "s3://hoodie-suite-warehouse/warehouse/abc_catalog.parquet"
@@ -347,6 +350,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 9399,
    "table": "abc_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/abc_products.parquet"
@@ -375,6 +379,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 78,
    "table": "account_logos",
    "uri": "s3://hoodie-suite-warehouse/warehouse/account_logos.parquet"
@@ -501,7 +506,7 @@
    "landed": true,
    "layout": "partitioned",
    "partitions": 12,
-   "rows": 305643,
+   "rows": 409882,
    "schemas_sampled": 1,
    "table": "agg_geo_stage",
    "uri": "s3://hoodie-suite-warehouse/warehouse/agg_geo_stage/s05_b0001.parquet"
@@ -557,6 +562,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 96450,
    "table": "bea_reference",
    "uri": "s3://hoodie-suite-warehouse/warehouse/bea_reference.parquet"
@@ -621,6 +627,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 127,
    "table": "bevalc_chains",
    "uri": "s3://hoodie-suite-warehouse/warehouse/bevalc_chains.parquet"
@@ -742,12 +749,18 @@
     {
      "name": "raw_json",
      "type": "VARCHAR"
+    },
+    {
+     "name": "__b",
+     "type": "VARCHAR"
     }
    ],
    "landed": true,
+   "layout": "bucketed",
+   "partitions": 16,
    "rows": 1534862,
    "table": "binnys_products",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/binnys_products.parquet"
+   "uri": "manifest: _manifest/binnys_products.json"
   },
   "bottlecapps_products": {
    "columns": [
@@ -829,6 +842,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 227,
    "table": "bottlecapps_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/bottlecapps_products.parquet"
@@ -929,6 +943,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 329,
    "table": "brand_events",
    "uri": "s3://hoodie-suite-warehouse/warehouse/brand_events.parquet"
@@ -1041,6 +1056,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 128950,
    "table": "ca_outlets",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ca_outlets.parquet"
@@ -1077,6 +1093,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 782928,
    "table": "category_cluster",
    "uri": "s3://hoodie-suite-warehouse/warehouse/category_cluster.parquet"
@@ -1125,6 +1142,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1498570,
    "table": "census_acs",
    "uri": "s3://hoodie-suite-warehouse/warehouse/census_acs.parquet"
@@ -1177,6 +1195,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 423,
    "table": "census_demographic",
    "uri": "s3://hoodie-suite-warehouse/warehouse/census_demographic.parquet"
@@ -1221,6 +1240,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 423,
    "table": "census_economic",
    "uri": "s3://hoodie-suite-warehouse/warehouse/census_economic.parquet"
@@ -1265,6 +1285,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 423,
    "table": "census_housing",
    "uri": "s3://hoodie-suite-warehouse/warehouse/census_housing.parquet"
@@ -1305,6 +1326,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 126011,
    "table": "census_migration",
    "uri": "s3://hoodie-suite-warehouse/warehouse/census_migration.parquet"
@@ -1349,6 +1371,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 876266,
    "table": "census_reference",
    "uri": "s3://hoodie-suite-warehouse/warehouse/census_reference.parquet"
@@ -1409,6 +1432,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 450,
    "table": "cex_reference",
    "uri": "s3://hoodie-suite-warehouse/warehouse/cex_reference.parquet"
@@ -1437,6 +1461,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 68747,
    "table": "city_centroids",
    "uri": "s3://hoodie-suite-warehouse/warehouse/city_centroids.parquet"
@@ -1508,6 +1533,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 799,
    "table": "cityhive_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/cityhive_products.parquet"
@@ -1550,6 +1576,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1,
    "table": "coverage_cells",
    "uri": "s3://hoodie-suite-warehouse/warehouse/coverage_cells.parquet"
@@ -1587,11 +1614,11 @@
    ],
    "landed": true,
    "layout": "partitioned",
-   "partitions": 2000,
-   "rows": 2000,
+   "partitions": 2003,
+   "rows": 2003,
    "schemas_sampled": 1,
    "table": "coverage_log",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/coverage_log/1785922914231349176_762_102.parquet"
+   "uri": "s3://hoodie-suite-warehouse/warehouse/coverage_log/1785934640044174285_747_3.parquet"
   },
   "cpi_reference": {
    "columns": [
@@ -1637,6 +1664,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1830,
    "table": "cpi_reference",
    "uri": "s3://hoodie-suite-warehouse/warehouse/cpi_reference.parquet"
@@ -1764,6 +1792,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 2490,
    "table": "dam_assets",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dam_assets.parquet"
@@ -1876,6 +1905,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 67,
    "table": "dam_census",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dam_census.parquet"
@@ -2035,6 +2065,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 66,
    "table": "dam_gallery",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dam_gallery.parquet"
@@ -2151,6 +2182,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1,
    "table": "dam_rights",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dam_rights.parquet"
@@ -2247,6 +2279,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 2560546,
    "table": "dim_outlet",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dim_outlet.parquet"
@@ -2263,6 +2296,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 5,
    "table": "dim_product_type",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dim_product_type.parquet"
@@ -2327,6 +2361,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1180839,
    "table": "dim_sku",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dim_sku.parquet"
@@ -2379,6 +2414,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1573,
    "table": "dim_store",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dim_store.parquet"
@@ -2427,6 +2463,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 755221,
    "table": "dist_item_xwalk",
    "uri": "s3://hoodie-suite-warehouse/warehouse/dist_item_xwalk.parquet"
@@ -2474,6 +2511,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 6,
    "table": "doordash_full_runs",
    "uri": "s3://hoodie-suite-warehouse/warehouse/doordash_full_runs.parquet"
@@ -2565,6 +2603,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 2304054,
    "table": "doordash_products_full",
    "uri": "s3://hoodie-suite-warehouse/warehouse/doordash_products_full.parquet"
@@ -2601,6 +2640,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 773357,
    "table": "doordash_stores",
    "uri": "s3://hoodie-suite-warehouse/warehouse/doordash_stores.parquet"
@@ -2795,6 +2835,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 3319500,
    "table": "fact_velocity",
    "uri": "s3://hoodie-suite-warehouse/warehouse/fact_velocity.parquet"
@@ -2832,11 +2873,11 @@
    ],
    "landed": true,
    "layout": "partitioned",
-   "partitions": 14,
-   "rows": 156,
+   "partitions": 16,
+   "rows": 179,
    "schemas_sampled": 1,
    "table": "field_stats",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/field_stats/2026-08-03_ubereats_ubereats_valuerules.parquet"
+   "uri": "s3://hoodie-suite-warehouse/warehouse/field_stats/2026-08-05_postmates_postmates_valuerules.parquet"
   },
   "fred_reference": {
    "columns": [
@@ -2878,6 +2919,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 550,
    "table": "fred_reference",
    "uri": "s3://hoodie-suite-warehouse/warehouse/fred_reference.parquet"
@@ -2898,6 +2940,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 935,
    "table": "geo_cbsa_ref",
    "uri": "s3://hoodie-suite-warehouse/warehouse/geo_cbsa_ref.parquet"
@@ -2982,6 +3025,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 10535,
    "table": "haskells_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/haskells_products.parquet"
@@ -3050,6 +3094,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 475,
    "table": "hemp_inventory",
    "uri": "s3://hoodie-suite-warehouse/warehouse/hemp_inventory.parquet"
@@ -3102,6 +3147,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4040,
    "table": "hemp_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/hemp_products.parquet"
@@ -3162,6 +3208,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 2144,
    "table": "hemp_retailers",
    "uri": "s3://hoodie-suite-warehouse/warehouse/hemp_retailers.parquet"
@@ -3194,6 +3241,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 11864042,
    "table": "hoodie_ids",
    "uri": "s3://hoodie-suite-warehouse/warehouse/hoodie_ids.parquet"
@@ -3238,6 +3286,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 776316,
    "table": "identity_cluster",
    "uri": "s3://hoodie-suite-warehouse/warehouse/identity_cluster.parquet"
@@ -3309,6 +3358,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 8737,
    "table": "img_matches",
    "uri": "s3://hoodie-suite-warehouse/warehouse/img_matches.parquet"
@@ -3337,6 +3387,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 29297,
    "table": "img_vec",
    "uri": "s3://hoodie-suite-warehouse/warehouse/img_vec.parquet"
@@ -3408,6 +3459,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 147235,
    "table": "item_identity",
    "uri": "s3://hoodie-suite-warehouse/warehouse/item_identity.parquet"
@@ -3444,6 +3496,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1,
    "table": "kroger_atlas_debug",
    "uri": "s3://hoodie-suite-warehouse/warehouse/kroger_atlas_debug.parquet"
@@ -3539,6 +3592,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 36812,
    "table": "kroger_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/kroger_products.parquet"
@@ -3579,6 +3633,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 6,
    "table": "kroger_runs",
    "uri": "s3://hoodie-suite-warehouse/warehouse/kroger_runs.parquet"
@@ -3750,6 +3805,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4,
    "table": "label_reads",
    "uri": "s3://hoodie-suite-warehouse/warehouse/label_reads.parquet"
@@ -3809,6 +3865,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 5921,
    "table": "market_projection",
    "uri": "s3://hoodie-suite-warehouse/warehouse/market_projection.parquet"
@@ -3860,6 +3917,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 13282,
    "table": "mart_velocity_brand_week",
    "uri": "s3://hoodie-suite-warehouse/warehouse/mart_velocity_brand_week.parquet"
@@ -3904,6 +3962,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 0,
    "table": "master_decisions",
    "uri": "s3://hoodie-suite-warehouse/warehouse/master_decisions.parquet"
@@ -3975,6 +4034,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 3,
    "table": "master_quality",
    "uri": "s3://hoodie-suite-warehouse/warehouse/master_quality.parquet"
@@ -4039,6 +4099,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 3,
    "table": "master_quality_canon",
    "uri": "s3://hoodie-suite-warehouse/warehouse/master_quality_canon.parquet"
@@ -4063,6 +4124,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 400,
    "table": "match_dict",
    "uri": "s3://hoodie-suite-warehouse/warehouse/match_dict.parquet"
@@ -4135,6 +4197,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 2144,
    "table": "meijer_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/meijer_products.parquet"
@@ -4199,6 +4262,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 468,
    "table": "menu_beverages",
    "uri": "s3://hoodie-suite-warehouse/warehouse/menu_beverages.parquet"
@@ -4231,6 +4295,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 316,
    "table": "menu_files",
    "uri": "s3://hoodie-suite-warehouse/warehouse/menu_files.parquet"
@@ -4275,6 +4340,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 319028,
    "table": "mont_sales",
    "uri": "s3://hoodie-suite-warehouse/warehouse/mont_sales.parquet"
@@ -4335,6 +4401,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4794,
    "table": "naop_accounts",
    "uri": "s3://hoodie-suite-warehouse/warehouse/naop_accounts.parquet"
@@ -4407,6 +4474,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 7139,
    "table": "naop_beverages",
    "uri": "s3://hoodie-suite-warehouse/warehouse/naop_beverages.parquet"
@@ -4479,6 +4547,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1141,
    "table": "national_shopify_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/national_shopify_products.parquet"
@@ -4538,6 +4607,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 234,
    "table": "normalization_findings",
    "uri": "s3://hoodie-suite-warehouse/warehouse/normalization_findings.parquet"
@@ -4610,6 +4680,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 3323,
    "table": "obs_metro_rollup",
    "uri": "s3://hoodie-suite-warehouse/warehouse/obs_metro_rollup.parquet"
@@ -4678,6 +4749,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 8999359,
    "table": "obs_quality_cell",
    "uri": "s3://hoodie-suite-warehouse/warehouse/obs_quality_cell.parquet"
@@ -4738,6 +4810,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 22,
    "table": "obs_quality_source",
    "uri": "s3://hoodie-suite-warehouse/warehouse/obs_quality_source.parquet"
@@ -4826,6 +4899,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 215203,
    "table": "obs_store_rollup",
    "uri": "s3://hoodie-suite-warehouse/warehouse/obs_store_rollup.parquet"
@@ -4978,6 +5052,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 516629,
    "table": "offprem_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/offprem_products.parquet"
@@ -5070,6 +5145,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 3844,
    "table": "or_pricing",
    "uri": "s3://hoodie-suite-warehouse/warehouse/or_pricing.parquet"
@@ -5134,6 +5210,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 888469,
    "table": "outlet_geography",
    "uri": "s3://hoodie-suite-warehouse/warehouse/outlet_geography.parquet"
@@ -5214,6 +5291,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1818275,
    "table": "outlet_master",
    "uri": "s3://hoodie-suite-warehouse/warehouse/outlet_master.parquet"
@@ -5270,6 +5348,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 9567,
    "table": "outlet_xref",
    "uri": "s3://hoodie-suite-warehouse/warehouse/outlet_xref.parquet"
@@ -5280,329 +5359,6 @@
    "landed": false,
    "table": "planogram_placements",
    "uri": "s3://hoodie-suite-warehouse/warehouse/planogram_placements.parquet"
-  },
-  "postmates_products": {
-   "columns": [
-    {
-     "name": "item_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "product_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "store_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "store_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "section",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "subsection",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "upc",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "gtins",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "price",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "list_price",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "on_promo",
-     "type": "BOOLEAN"
-    },
-    {
-     "name": "discount",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "promo_text",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "promo_tag",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "promo_type",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "promo_pct",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "promo_flat",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "promo_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "in_stock",
-     "type": "BOOLEAN"
-    },
-    {
-     "name": "is_sold_out",
-     "type": "BOOLEAN"
-    },
-    {
-     "name": "suspend_reason",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "suspend_until",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "low_availability",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "avail_state",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "stock_label",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "max_qty",
-     "type": "BIGINT"
-    },
-    {
-     "name": "min_qty",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "increment_qty",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "default_qty",
-     "type": "BIGINT"
-    },
-    {
-     "name": "sold_by",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "priced_by",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "is_alcohol",
-     "type": "BOOLEAN"
-    },
-    {
-     "name": "num_alcoholic",
-     "type": "BIGINT"
-    },
-    {
-     "name": "age_rule",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "abv",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "pack",
-     "type": "BIGINT"
-    },
-    {
-     "name": "item_size",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "nutritional_info",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "classifications",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "dietary_labels",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "endorsements",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "description",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "image",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "image_count",
-     "type": "BIGINT"
-    },
-    {
-     "name": "zone",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "raw_json",
-     "type": "VARCHAR"
-    }
-   ],
-   "landed": true,
-   "rows": 3190,
-   "table": "postmates_products",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/postmates_products.parquet"
-  },
-  "postmates_products_parts": {
-   "columns": [
-    {
-     "name": "store_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "store_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "source",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "item_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "brand",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "upc",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "gtin",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "price",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "list_price",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "promo",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "size",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "abv",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "in_stock",
-     "type": "BOOLEAN"
-    },
-    {
-     "name": "stock_label",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "category",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "section",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "subsection",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "section_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "subsection_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "category_path",
-     "type": "VARCHAR"
-    }
-   ],
-   "landed": true,
-   "layout": "partitioned",
-   "partitions": 1,
-   "rows": 6040,
-   "schemas_sampled": 1,
-   "table": "postmates_products_parts",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/postmates_products_parts/2026-08-03_s00_b0001.parquet"
-  },
-  "postmates_sitemap": {
-   "columns": [
-    {
-     "name": "store_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "store_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "slug",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "url",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "source",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "captured_at",
-     "type": "BIGINT"
-    }
-   ],
-   "landed": true,
-   "rows": 269007,
-   "table": "postmates_sitemap",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/postmates_sitemap.parquet"
   },
   "price_coherence": {
    "columns": [
@@ -5648,6 +5404,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 19855,
    "table": "price_coherence",
    "uri": "s3://hoodie-suite-warehouse/warehouse/price_coherence.parquet"
@@ -5692,6 +5449,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 5477,
    "table": "publix_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/publix_products.parquet"
@@ -5733,11 +5491,11 @@
    ],
    "landed": true,
    "layout": "partitioned",
-   "partitions": 3882,
-   "rows": 31562723,
+   "partitions": 3889,
+   "rows": 31573796,
    "schemas_sampled": 1,
    "table": "raw_payloads",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/raw_payloads/2026-08-04_ubereats_s07_b0041.parquet"
+   "uri": "s3://hoodie-suite-warehouse/warehouse/raw_payloads/2026-08-05_postmates_s06_b0001.parquet"
   },
   "retail_observations": {
    "columns": [
@@ -5820,9 +5578,9 @@
    ],
    "landed": true,
    "layout": "partitioned",
-   "partitions": 4296,
-   "rows": 59077605,
-   "schemas_sampled": 3,
+   "partitions": 4331,
+   "rows": 60619371,
+   "schemas_sampled": 2,
    "table": "retail_observations",
    "uri": "s3://hoodie-suite-warehouse/warehouse/retail_observations/2026-08-05_publix.parquet"
   },
@@ -5894,6 +5652,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 520,
    "table": "salsify_catalogs",
    "uri": "s3://hoodie-suite-warehouse/warehouse/salsify_catalogs.parquet"
@@ -6042,6 +5801,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 63889,
    "table": "salsify_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/salsify_products.parquet"
@@ -6141,6 +5901,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 260,
    "table": "scrape_runs",
    "uri": "s3://hoodie-suite-warehouse/warehouse/scrape_runs.parquet"
@@ -6261,6 +6022,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 25785,
    "table": "sevenfifty_items",
    "uri": "s3://hoodie-suite-warehouse/warehouse/sevenfifty_items.parquet"
@@ -6385,6 +6147,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 5304,
    "table": "sevennow_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/sevennow_products.parquet"
@@ -6441,6 +6204,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1015,
    "table": "signal_movers",
    "uri": "s3://hoodie-suite-warehouse/warehouse/signal_movers.parquet"
@@ -6481,6 +6245,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 2235,
    "table": "signal_voids",
    "uri": "s3://hoodie-suite-warehouse/warehouse/signal_voids.parquet"
@@ -6529,6 +6294,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4,
    "table": "snowflake_load_runs",
    "uri": "s3://hoodie-suite-warehouse/warehouse/snowflake_load_runs.parquet"
@@ -6605,7 +6371,7 @@
     },
     {
      "name": "cov_items_pct",
-     "type": "DOUBLE"
+     "type": "INTEGER"
     },
     {
      "name": "cov_items",
@@ -6613,15 +6379,15 @@
     },
     {
      "name": "landed_stores",
-     "type": "INTEGER"
+     "type": "BIGINT"
     },
     {
      "name": "expected_stores",
-     "type": "INTEGER"
+     "type": "BIGINT"
     },
     {
      "name": "cov_stores_pct",
-     "type": "INTEGER"
+     "type": "DOUBLE"
     },
     {
      "name": "cov_stores",
@@ -6630,11 +6396,11 @@
    ],
    "landed": true,
    "layout": "partitioned",
-   "partitions": 848,
-   "rows": 848,
+   "partitions": 859,
+   "rows": 859,
    "schemas_sampled": 2,
    "table": "source_runs_log",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/source_runs_log/1785925532741_1854540b1edd28_689.parquet"
+   "uri": "s3://hoodie-suite-warehouse/warehouse/source_runs_log/1785943046927_80e9676b609148_688.parquet"
   },
   "source_taxonomy": {
    "columns": [
@@ -6652,6 +6418,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 10825,
    "table": "source_taxonomy",
    "uri": "s3://hoodie-suite-warehouse/warehouse/source_taxonomy.parquet"
@@ -6752,6 +6519,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1029,
    "table": "specs_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/specs_products.parquet"
@@ -6780,6 +6548,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 262191,
    "table": "src_brands",
    "uri": "s3://hoodie-suite-warehouse/warehouse/src_brands.parquet"
@@ -6832,6 +6601,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1059584,
    "table": "src_items",
    "uri": "s3://hoodie-suite-warehouse/warehouse/src_items.parquet"
@@ -6949,12 +6719,18 @@
     {
      "name": "geo_precision",
      "type": "VARCHAR"
+    },
+    {
+     "name": "__b",
+     "type": "VARCHAR"
     }
    ],
    "landed": true,
+   "layout": "bucketed",
+   "partitions": 16,
    "rows": 1916357,
    "table": "src_outlets",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/src_outlets.parquet"
+   "uri": "manifest: _manifest/src_outlets.json"
   },
   "src_products": {
    "columns": [
@@ -7048,6 +6824,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1001832,
    "table": "src_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/src_products.parquet"
@@ -7116,6 +6893,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1084333,
    "table": "src_skus",
    "uri": "s3://hoodie-suite-warehouse/warehouse/src_skus.parquet"
@@ -7144,6 +6922,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 5,
    "table": "src_summary",
    "uri": "s3://hoodie-suite-warehouse/warehouse/src_summary.parquet"
@@ -7195,6 +6974,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1584,
    "table": "target_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/target_products.parquet"
@@ -7239,6 +7019,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1189,
    "table": "target_stores",
    "uri": "s3://hoodie-suite-warehouse/warehouse/target_stores.parquet"
@@ -7321,6 +7102,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 27269,
    "table": "toast_beverages",
    "uri": "s3://hoodie-suite-warehouse/warehouse/toast_beverages.parquet"
@@ -7381,6 +7163,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 2059,
    "table": "toast_menu_accounts",
    "uri": "s3://hoodie-suite-warehouse/warehouse/toast_menu_accounts.parquet"
@@ -7413,6 +7196,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 85284,
    "table": "toast_outlets",
    "uri": "s3://hoodie-suite-warehouse/warehouse/toast_outlets.parquet"
@@ -7489,6 +7273,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 9113,
    "table": "total_wine_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/total_wine_products.parquet"
@@ -7545,6 +7330,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 36092,
    "table": "trade_area_demand",
    "uri": "s3://hoodie-suite-warehouse/warehouse/trade_area_demand.parquet"
@@ -7593,6 +7379,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4024,
    "table": "trader_joes_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/trader_joes_products.parquet"
@@ -7653,6 +7440,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1071850,
    "table": "ttb_cola",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_cola.parquet"
@@ -7745,6 +7533,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1858375,
    "table": "ttb_cola_detail",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_cola_detail.parquet"
@@ -7797,6 +7586,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 23874,
    "table": "ttb_cola_labels",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_cola_labels.parquet"
@@ -7877,6 +7667,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1732,
    "table": "ttb_master",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_master.parquet"
@@ -7901,6 +7692,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 200,
    "table": "ttb_quarantine_summary",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_quarantine_summary.parquet"
@@ -7981,6 +7773,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1462,
    "table": "ttb_review",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ttb_review.parquet"
@@ -8050,139 +7843,18 @@
     {
      "name": "category",
      "type": "INTEGER"
+    },
+    {
+     "name": "__b",
+     "type": "VARCHAR"
     }
    ],
    "landed": true,
+   "layout": "bucketed",
+   "partitions": 256,
    "rows": 2160806,
    "table": "ubereats_products",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/ubereats_products.parquet"
-  },
-  "ubereats_products_parts": {
-   "columns": [
-    {
-     "name": "store_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "store_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "source",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "item_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "brand",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "upc",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "gtin",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "price",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "list_price",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "promo",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "size",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "abv",
-     "type": "DOUBLE"
-    },
-    {
-     "name": "in_stock",
-     "type": "BOOLEAN"
-    },
-    {
-     "name": "stock_label",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "category",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "section",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "subsection",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "section_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "subsection_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "category_path",
-     "type": "VARCHAR"
-    }
-   ],
-   "landed": true,
-   "layout": "partitioned",
-   "partitions": 3832,
-   "rows": 29901954,
-   "schemas_sampled": 1,
-   "table": "ubereats_products_parts",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/ubereats_products_parts/2026-08-04_s07_b0041.parquet"
-  },
-  "ubereats_sitemap": {
-   "columns": [
-    {
-     "name": "store_uuid",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "store_name",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "slug",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "url",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "source",
-     "type": "VARCHAR"
-    },
-    {
-     "name": "captured_at",
-     "type": "BIGINT"
-    }
-   ],
-   "landed": true,
-   "rows": 755032,
-   "table": "ubereats_sitemap",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/ubereats_sitemap.parquet"
+   "uri": "manifest: _manifest/ubereats_products.json"
   },
   "ut_pricing": {
    "columns": [
@@ -8244,6 +7916,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 10239,
    "table": "ut_pricing",
    "uri": "s3://hoodie-suite-warehouse/warehouse/ut_pricing.parquet"
@@ -8276,6 +7949,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 5,
    "table": "velocity_calibration",
    "uri": "s3://hoodie-suite-warehouse/warehouse/velocity_calibration.parquet"
@@ -8316,6 +7990,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 365,
    "table": "vip_brandbuilder_directory",
    "uri": "s3://hoodie-suite-warehouse/warehouse/vip_brandbuilder_directory.parquet"
@@ -8424,6 +8099,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 698807,
    "table": "vip_brandbuilder_items",
    "uri": "s3://hoodie-suite-warehouse/warehouse/vip_brandbuilder_items.parquet"
@@ -8460,6 +8136,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 7609,
    "table": "vip_brandbuilder_sellsheet_packages",
    "uri": "s3://hoodie-suite-warehouse/warehouse/vip_brandbuilder_sellsheet_packages.parquet"
@@ -8484,6 +8161,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 33196,
    "table": "vip_finder_brands",
    "uri": "s3://hoodie-suite-warehouse/warehouse/vip_finder_brands.parquet"
@@ -8556,6 +8234,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1242,
    "table": "vip_finder_tenants",
    "uri": "s3://hoodie-suite-warehouse/warehouse/vip_finder_tenants.parquet"
@@ -8616,6 +8295,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 399,
    "table": "vtinfo_titos",
    "uri": "s3://hoodie-suite-warehouse/warehouse/vtinfo_titos.parquet"
@@ -8768,6 +8448,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 7324,
    "table": "walmart_products",
    "uri": "s3://hoodie-suite-warehouse/warehouse/walmart_products.parquet"
@@ -8812,6 +8493,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 15,
    "table": "walmart_runs",
    "uri": "s3://hoodie-suite-warehouse/warehouse/walmart_runs.parquet"
@@ -8912,6 +8594,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4000,
    "table": "wb_master",
    "uri": "s3://hoodie-suite-warehouse/warehouse/wb_master.parquet"
@@ -8956,6 +8639,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 12000,
    "table": "wb_matches",
    "uri": "s3://hoodie-suite-warehouse/warehouse/wb_matches.parquet"
@@ -9016,6 +8700,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4000,
    "table": "wb_merges",
    "uri": "s3://hoodie-suite-warehouse/warehouse/wb_merges.parquet"
@@ -9116,6 +8801,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4000,
    "table": "wb_queue",
    "uri": "s3://hoodie-suite-warehouse/warehouse/wb_queue.parquet"
@@ -9156,6 +8842,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1,
    "table": "wb_summary",
    "uri": "s3://hoodie-suite-warehouse/warehouse/wb_summary.parquet"
@@ -9192,14 +8879,41 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1396,
    "table": "winebow_brands",
    "uri": "s3://hoodie-suite-warehouse/warehouse/winebow_brands.parquet"
   },
   "xsource_dictionary": {
-   "columns": [],
-   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/xsource_dictionary.parquet' in region 'auto' (HTTP 404 Not Found)",
-   "landed": false,
+   "columns": [
+    {
+     "name": "dimension",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "variant_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "variant",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canonical",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "times",
+     "type": "BIGINT"
+    },
+    {
+     "name": "updated_at",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "single file",
+   "rows": 6,
    "table": "xsource_dictionary",
    "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_dictionary.parquet"
   },
@@ -9331,6 +9045,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 6,
    "table": "xsource_gold",
    "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_gold.parquet"
@@ -9486,14 +9201,49 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 4617,
    "table": "xsource_queue",
    "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_queue.parquet"
   },
   "xsource_taxonomy": {
-   "columns": [],
-   "error": "HTTP Error: HTTP GET error reading 's3://hoodie-suite-warehouse/warehouse/xsource_taxonomy.parquet' in region 'auto' (HTTP 404 Not Found)",
-   "landed": false,
+   "columns": [
+    {
+     "name": "path_key",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_type",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_class",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_subclass",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "canon_varietal",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "times",
+     "type": "BIGINT"
+    },
+    {
+     "name": "first_seen",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "last_seen",
+     "type": "VARCHAR"
+    }
+   ],
+   "landed": true,
+   "layout": "single file",
+   "rows": 2,
    "table": "xsource_taxonomy",
    "uri": "s3://hoodie-suite-warehouse/warehouse/xsource_taxonomy.parquet"
   },
@@ -9521,6 +9271,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1168694,
    "table": "xwalk_item_identity",
    "uri": "s3://hoodie-suite-warehouse/warehouse/xwalk_item_identity.parquet"
@@ -9549,6 +9300,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 1338594,
    "table": "xwalk_source_sku",
    "uri": "s3://hoodie-suite-warehouse/warehouse/xwalk_source_sku.parquet"
@@ -9569,6 +9321,7 @@
     }
    ],
    "landed": true,
+   "layout": "single file",
    "rows": 33791,
    "table": "zcta_centroids",
    "uri": "s3://hoodie-suite-warehouse/warehouse/zcta_centroids.parquet"

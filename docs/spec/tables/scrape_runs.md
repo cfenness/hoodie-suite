@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 260 |
 | Columns | 10 |
-| Storage | — |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | partitioned (append-only parts) |

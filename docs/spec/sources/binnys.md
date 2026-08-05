@@ -36,7 +36,7 @@ _No literal endpoint constant in `binnys_scraper.py`._ The transport is either i
 
 ### `binnys_products`
 
-1,534,862 rows · 29 columns
+1,534,862 rows · 30 columns
 
 
 | column | type |
@@ -70,6 +70,7 @@ _No literal endpoint constant in `binnys_scraper.py`._ The transport is either i
 | `price` | `DOUBLE` |
 | `qty` | `BIGINT` |
 | `raw_json` | `VARCHAR` |
+| `__b` | `VARCHAR` |
 
 
 **Written by** `binnys_scraper.py:281` (write_full_rebuild), `binnys_scraper.py:283` (write_accumulate)

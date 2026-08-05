@@ -36,7 +36,7 @@ _No literal endpoint constant in `aggregator_geo.py`._ The transport is either i
 
 ### `src_outlets`
 
-1,916,357 rows · 28 columns
+1,916,357 rows · 29 columns
 
 
 | column | type |
@@ -69,6 +69,7 @@ _No literal endpoint constant in `aggregator_geo.py`._ The transport is either i
 | `geo_cell` | `VARCHAR` |
 | `county_fips` | `VARCHAR` |
 | `geo_precision` | `VARCHAR` |
+| `__b` | `VARCHAR` |
 
 
 **Written by** `aggregator_geo.py:93` (write_accumulate), `city_centroid.py:268` (write_accumulate), `geocode.py:134` (write_accumulate), `mappability.py:163` (write_accumulate), `normalize.py:651` (write_full_rebuild), `reconcile_ue_ids.py:45` (write_full_rebuild), `refresh_fast.py:60` (write_accumulate), `ue_sitemap.py:97` (write_accumulate)

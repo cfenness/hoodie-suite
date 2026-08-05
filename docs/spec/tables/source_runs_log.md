@@ -3,15 +3,15 @@
 |  |  |
 |---|---|
 | Status | landed |
-| Rows | 848 |
+| Rows | 859 |
 | Columns | 23 |
 | Storage | partitioned |
-| Partitions | 848 |
+| Partitions | 859 |
 | Schema drift | **2 schemas in a 6-partition sample** |
 | Write mode | partitioned (append-only parts) |
 | Declared in `table_spec.py` | no — schema is whatever the writer emits |
 | Written by sources | — |
-| URI | `s3://hoodie-suite-warehouse/warehouse/source_runs_log/1785925532741_1854540b1edd28_689.parquet` |
+| URI | `s3://hoodie-suite-warehouse/warehouse/source_runs_log/1785943046927_80e9676b609148_688.parquet` |
 
 
 ## Columns
@@ -35,11 +35,11 @@
 | `cov_basis` | `VARCHAR` |
 | `landed_items` | `BIGINT` |
 | `expected_items` | `BIGINT` |
-| `cov_items_pct` | `DOUBLE` |
+| `cov_items_pct` | `INTEGER` |
 | `cov_items` | `VARCHAR` |
-| `landed_stores` | `INTEGER` |
-| `expected_stores` | `INTEGER` |
-| `cov_stores_pct` | `INTEGER` |
+| `landed_stores` | `BIGINT` |
+| `expected_stores` | `BIGINT` |
+| `cov_stores_pct` | `DOUBLE` |
 | `cov_stores` | `VARCHAR` |
 
 

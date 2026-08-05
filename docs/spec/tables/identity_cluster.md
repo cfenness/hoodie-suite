@@ -5,7 +5,7 @@
 | Status | landed |
 | Rows | 776,316 |
 | Columns | 9 |
-| Storage | — |
+| Storage | single file |
 | Partitions | — |
 | Schema drift | — |
 | Write mode | flat (full overwrite) |
@@ -33,4 +33,4 @@
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `build_product_master.py:666` | `write_parquet` | flat (full overwrite) | no |
+| `build_product_master.py:683` | `write_parquet` | flat (full overwrite) | no |

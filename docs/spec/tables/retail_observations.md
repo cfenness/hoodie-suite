@@ -3,11 +3,11 @@
 |  |  |
 |---|---|
 | Status | landed |
-| Rows | 59,077,605 |
+| Rows | 60,619,371 |
 | Columns | 19 |
 | Storage | partitioned |
-| Partitions | 4,296 |
-| Schema drift | **3 schemas in a 6-partition sample** |
+| Partitions | 4,331 |
+| Schema drift | **2 schemas in a 6-partition sample** |
 | Write mode | partitioned (append-only parts) |
 | Declared in `table_spec.py` | yes |
 | Written by sources | `abc-fws` |

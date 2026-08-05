@@ -36,32 +36,7 @@ _No literal endpoint constant in `ue_enrich.py`._ The transport is either inheri
 
 ### `ubereats_products_parts`
 
-29,901,954 rows · 21 columns · 3,832 partitions
-
-
-| column | type |
-|---|---|
-| `store_uuid` | `VARCHAR` |
-| `store_name` | `VARCHAR` |
-| `source` | `VARCHAR` |
-| `item_uuid` | `VARCHAR` |
-| `name` | `VARCHAR` |
-| `brand` | `VARCHAR` |
-| `upc` | `VARCHAR` |
-| `gtin` | `VARCHAR` |
-| `price` | `DOUBLE` |
-| `list_price` | `DOUBLE` |
-| `promo` | `VARCHAR` |
-| `size` | `VARCHAR` |
-| `abv` | `DOUBLE` |
-| `in_stock` | `BOOLEAN` |
-| `stock_label` | `VARCHAR` |
-| `category` | `VARCHAR` |
-| `section` | `VARCHAR` |
-| `subsection` | `VARCHAR` |
-| `section_name` | `VARCHAR` |
-| `subsection_name` | `VARCHAR` |
-| `category_path` | `VARCHAR` |
+_Not in the live capture — the code writes it but the table was not scanned._
 
 
 ## 4. `ue_enrich.py` — the module's own account

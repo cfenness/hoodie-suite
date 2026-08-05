@@ -4,14 +4,14 @@
 |---|---|
 | Status | landed |
 | Rows | 1,534,862 |
-| Columns | 29 |
-| Storage | — |
-| Partitions | — |
-| Schema drift | — |
+| Columns | 30 |
+| Storage | bucketed |
+| Partitions | 16 |
+| Schema drift | uniform in sample |
 | Write mode | accumulating (merge; bucketed if migrated), flat (full rebuild, layout-preserving) |
 | Declared in `table_spec.py` | no — schema is whatever the writer emits |
 | Written by sources | `binnys` |
-| URI | `s3://hoodie-suite-warehouse/warehouse/binnys_products.parquet` |
+| URI | `manifest: _manifest/binnys_products.json` |
 
 
 ## Columns
@@ -47,6 +47,7 @@
 | `price` | `DOUBLE` |
 | `qty` | `BIGINT` |
 | `raw_json` | `VARCHAR` |
+| `__b` | `VARCHAR` |
 
 
 ## Writers

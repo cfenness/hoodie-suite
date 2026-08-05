@@ -34,4 +34,4 @@
 
 | module:line | call | layout | pins dtypes |
 |---|---|---|---|
-| `rights.py:579` | `write_partition` | partitioned (append-only parts) | no |
+| `rights.py:590` | `write_partition` | partitioned (append-only parts) | no |
