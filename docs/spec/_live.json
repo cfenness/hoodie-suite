@@ -933,26 +933,26 @@
      "type": "VARCHAR"
     },
     {
-     "fill_pct": 95.1,
-     "filled": 380412,
+     "fill_pct": 93.6,
+     "filled": 374214,
      "name": "brand",
      "type": "VARCHAR"
     },
     {
-     "fill_pct": 88.6,
-     "filled": 354279,
+     "fill_pct": 87.2,
+     "filled": 348697,
      "name": "varietal",
      "type": "VARCHAR"
     },
     {
-     "fill_pct": 25.9,
-     "filled": 103436,
+     "fill_pct": 24.6,
+     "filled": 98456,
      "name": "region",
      "type": "VARCHAR"
     },
     {
-     "fill_pct": 98.4,
-     "filled": 393617,
+     "fill_pct": 97.3,
+     "filled": 389104,
      "name": "origin",
      "type": "VARCHAR"
     },
@@ -976,7 +976,7 @@
     },
     {
      "fill_pct": 100.0,
-     "filled": 400000,
+     "filled": 399987,
      "name": "unit_label",
      "type": "VARCHAR"
     },
@@ -987,14 +987,14 @@
      "type": "DOUBLE"
     },
     {
-     "fill_pct": 64.1,
-     "filled": 256440,
+     "fill_pct": 60.4,
+     "filled": 241448,
      "name": "proof",
      "type": "DOUBLE"
     },
     {
-     "fill_pct": 64.1,
-     "filled": 256440,
+     "fill_pct": 60.4,
+     "filled": 241448,
      "name": "abv",
      "type": "DOUBLE"
     },
@@ -1011,14 +1011,14 @@
      "type": "INTEGER"
     },
     {
-     "fill_pct": 4.2,
-     "filled": 16648,
+     "fill_pct": 6.1,
+     "filled": 24512,
      "name": "rating",
      "type": "DOUBLE"
     },
     {
-     "fill_pct": 4.2,
-     "filled": 16697,
+     "fill_pct": 6.2,
+     "filled": 24825,
      "name": "reviews",
      "type": "DOUBLE"
     },
@@ -1071,8 +1071,8 @@
      "type": "VARCHAR"
     },
     {
-     "fill_pct": 94.9,
-     "filled": 379614,
+     "fill_pct": 95.7,
+     "filled": 382870,
      "name": "price",
      "type": "DOUBLE"
     },
@@ -1087,14 +1087,23 @@
      "filled": 0,
      "name": "raw_json",
      "type": "VARCHAR"
+    },
+    {
+     "fill_pct": 100.0,
+     "filled": 400000,
+     "name": "__b",
+     "type": "VARCHAR"
     }
    ],
    "fill_basis": "first 400,000 rows",
    "fill_rows": 400000,
    "landed": true,
+   "layout": "bucketed",
+   "partitions": 16,
+   "read_expr": "read_parquet(['s3://hoodie-suite-warehouse/warehouse/binnys_products/__b=0/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=1/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=2/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=3/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=4/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=5/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=6/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=7/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=8/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=9/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=a/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=b/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=c/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=d/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=e/data_0.parquet', 's3://hoodie-suite-warehouse/warehouse/binnys_products/__b=f/data_0.parquet'], union_by_name=true)",
    "rows": 1534862,
    "table": "binnys_products",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/binnys_products.parquet"
+   "uri": "manifest: _manifest/binnys_products.json"
   },
   "bottlecapps_products": {
    "columns": [
@@ -9978,122 +9987,189 @@
   "src_outlets": {
    "columns": [
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "source",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "store_id",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 399938,
      "name": "store_name",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 8.6,
+     "filled": 34427,
      "name": "chain",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "is_chain",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "f_beer",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "f_wine",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "f_spirits",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "f_hemp",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "f_cannabis",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "f_rtd_spirits",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "flag_basis",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "license_conflict",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 29.0,
+     "filled": 116075,
      "name": "address",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 59.3,
+     "filled": 237048,
      "name": "city",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 57.0,
+     "filled": 228167,
      "name": "state",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 27.6,
+     "filled": 110499,
      "name": "zip",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 55.8,
+     "filled": 223206,
      "name": "lat",
      "type": "DOUBLE"
     },
     {
+     "fill_pct": 55.8,
+     "filled": 223206,
      "name": "lng",
      "type": "DOUBLE"
     },
     {
+     "fill_pct": 0.1,
+     "filled": 564,
      "name": "phone",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "addr_valid",
      "type": "BOOLEAN"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 400000,
      "name": "hoodie_outlet",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 99.9,
+     "filled": 399758,
      "name": "name_key",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 0.1,
+     "filled": 341,
      "name": "phone_norm",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 24.8,
+     "filled": 99253,
      "name": "addr_key",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 25.0,
+     "filled": 100128,
      "name": "geo_cell",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 4.5,
+     "filled": 17824,
      "name": "county_fips",
      "type": "VARCHAR"
     },
     {
+     "fill_pct": 100.0,
+     "filled": 399984,
      "name": "geo_precision",
+     "type": "VARCHAR"
+    },
+    {
+     "fill_pct": 100.0,
+     "filled": 400000,
+     "name": "__b",
      "type": "VARCHAR"
     }
    ],
+   "fill_basis": "first 400,000 rows",
+   "fill_rows": 400000,
    "landed": true,
+   "layout": "bucketed",
+   "partitions": 16,
+   "read_expr": "read_parquet(['s3://hoodie-suite-warehouse/warehouse/src_outlets/__b=0/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=1/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=2/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=3/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=4/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=5/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=6/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=7/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=8/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=9/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=a/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=b/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=c/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=d/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=e/part-v7.parquet', 's3://hoodie-suite-warehouse/warehouse/src_outlets/__b=f/part-v7.parquet'], union_by_name=true)",
    "rows": 1916357,
    "table": "src_outlets",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/src_outlets.parquet"
+   "uri": "manifest: _manifest/src_outlets.json"
   },
   "src_products": {
    "columns": [
@@ -11633,8 +11709,8 @@
      "type": "INTEGER"
     },
     {
-     "fill_pct": 8.1,
-     "filled": 32302,
+     "fill_pct": 3.1,
+     "filled": 12279,
      "name": "upc",
      "type": "VARCHAR"
     },
@@ -11651,8 +11727,8 @@
      "type": "DOUBLE"
     },
     {
-     "fill_pct": 4.3,
-     "filled": 17106,
+     "fill_pct": 2.5,
+     "filled": 9983,
      "name": "list_price",
      "type": "DOUBLE"
     },
@@ -11669,8 +11745,8 @@
      "type": "INTEGER"
     },
     {
-     "fill_pct": 1.3,
-     "filled": 5162,
+     "fill_pct": 0.8,
+     "filled": 3244,
      "name": "abv",
      "type": "DOUBLE"
     },
@@ -11681,8 +11757,8 @@
      "type": "BOOLEAN"
     },
     {
-     "fill_pct": 16.4,
-     "filled": 65415,
+     "fill_pct": 8.9,
+     "filled": 35582,
      "name": "stock_label",
      "type": "VARCHAR"
     },
@@ -11691,14 +11767,23 @@
      "filled": 0,
      "name": "category",
      "type": "INTEGER"
+    },
+    {
+     "fill_pct": 100.0,
+     "filled": 400000,
+     "name": "__b",
+     "type": "VARCHAR"
     }
    ],
    "fill_basis": "first 400,000 rows",
    "fill_rows": 400000,
    "landed": true,
+   "layout": "bucketed",
+   "partitions": 256,
+   "read_expr": "read_parquet(['s3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=00/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=01/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=02/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=03/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=04/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=05/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=06/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=07/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=08/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=09/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=0a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=0b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=0c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=0d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=0e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=0f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=10/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=11/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=12/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=13/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=14/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=15/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=16/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=17/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=18/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=19/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=1a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=1b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=1c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=1d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=1e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=1f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=20/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=21/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=22/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=23/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=24/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=25/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=26/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=27/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=28/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=29/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=2a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=2b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=2c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=2d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=2e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=2f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=30/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=31/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=32/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=33/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=34/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=35/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=36/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=37/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=38/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=39/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=3a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=3b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=3c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=3d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=3e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=3f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=40/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=41/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=42/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=43/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=44/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=45/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=46/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=47/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=48/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=49/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=4a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=4b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=4c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=4d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=4e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=4f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=50/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=51/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=52/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=53/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=54/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=55/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=56/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=57/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=58/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=59/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=5a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=5b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=5c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=5d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=5e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=5f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=60/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=61/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=62/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=63/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=64/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=65/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=66/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=67/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=68/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=69/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=6a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=6b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=6c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=6d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=6e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=6f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=70/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=71/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=72/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=73/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=74/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=75/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=76/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=77/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=78/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=79/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=7a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=7b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=7c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=7d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=7e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=7f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=80/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=81/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=82/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=83/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=84/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=85/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=86/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=87/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=88/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=89/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=8a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=8b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=8c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=8d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=8e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=8f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=90/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=91/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=92/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=93/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=94/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=95/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=96/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=97/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=98/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=99/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=9a/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=9b/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=9c/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=9d/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=9e/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=9f/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a0/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a1/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a2/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a3/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a4/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a5/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a6/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a7/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a8/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=a9/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=aa/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ab/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ac/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ad/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ae/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=af/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b0/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b1/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b2/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b3/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b4/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b5/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b6/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b7/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b8/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=b9/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ba/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=bb/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=bc/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=bd/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=be/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=bf/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c0/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c1/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c2/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c3/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c4/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c5/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c6/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c7/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c8/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=c9/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ca/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=cb/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=cc/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=cd/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ce/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=cf/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d0/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d1/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d2/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d3/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d4/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d5/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d6/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d7/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d8/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=d9/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=da/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=db/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=dc/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=dd/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=de/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=df/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e0/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e1/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e2/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e3/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e4/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e5/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e6/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e7/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e8/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=e9/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ea/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=eb/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ec/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ed/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ee/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ef/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f0/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f1/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f2/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f3/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f4/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f5/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f6/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f7/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f8/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=f9/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=fa/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=fb/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=fc/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=fd/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=fe/part-v2.parquet', 's3://hoodie-suite-warehouse/warehouse/ubereats_products/__b=ff/part-v2.parquet'], union_by_name=true)",
    "rows": 2160806,
    "table": "ubereats_products",
-   "uri": "s3://hoodie-suite-warehouse/warehouse/ubereats_products.parquet"
+   "uri": "manifest: _manifest/ubereats_products.json"
   },
   "ubereats_products_parts": {
    "columns": [

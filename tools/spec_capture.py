@@ -84,11 +84,18 @@ def capture(names, counts=False, fill=False, log=print):
                     rec["layout"] = "bucketed"
                     rec["partitions"] = len(files)
                     rec["uri"] = "manifest: _manifest/%s.json" % name
+                    rec["read_expr"] = "read_parquet([%s], union_by_name=true)" % lst
                     if counts:
                         try:
                             rec["rows"] = int(warehouse.row_count(name) or 0)
                         except Exception as e:
                             rec["rows_error"] = str(e)[:120]
+                    # This branch returns early, so it has to do everything the shared tail does —
+                    # otherwise bucketed tables land with no fill rates and the page shows a blank
+                    # column where every other table shows a number, which reads as "no data" rather
+                    # than "not measured". Same shape as the bug this branch exists to fix.
+                    if fill:
+                        fill_rates(rec, con, warehouse, log=log)
                     out[name] = rec
                     if i % 20 == 0:
                         log("  %d/%d (%ds)" % (i, len(names), int(time.time() - t0)))
@@ -197,7 +204,11 @@ def fill_rates(rec, con, warehouse, budget_rows=400000, log=print):
             frm = "read_parquet([%s], union_by_name=true)" % lst
             basis = "newest %d of %d partitions" % (len(take), len(files))
         else:
-            frm = "read_parquet('%s', union_by_name=true)" % rec["uri"]
+            # A BUCKETED table's `uri` is a human-readable "manifest: …" label, not a path — reading
+            # it would produce read_parquet('manifest: …') and fail, so fill would silently come back
+            # empty and the page would show blanks that look like "column never populated". The real
+            # source rides alongside in `read_expr`.
+            frm = rec.get("read_expr") or ("read_parquet('%s', union_by_name=true)" % rec["uri"])
             basis = "full table"
             if (rec.get("rows") or 0) > budget_rows:
                 frm = "(SELECT * FROM %s LIMIT %d)" % (frm, budget_rows)

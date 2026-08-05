@@ -51,7 +51,7 @@
 | `platform_census.py:186` | `write_parquet` | flat (full overwrite) | no |
 | `platform_census.py:184` | `write_parquet` | flat (full overwrite) | no |
 | `seed.py:137` | `write_parquet` | flat (full overwrite) | no |
-| `server.py:3629` | `write_parquet` | flat (full overwrite) | no |
+| `server.py:3686` | `write_parquet` | flat (full overwrite) | no |
 | `server.py:677` | `write_parquet` | flat (full overwrite) | no |
 | `snapshot_land.py:51` | `write_parquet` | flat (full overwrite) | no |
 | `snapshot_land.py:70` | `write_parquet` | flat (full overwrite) | no |
@@ -61,7 +61,7 @@
 | `ue_crawl.py:264` | `write_accumulate` | accumulating (merge; bucketed if migrated) | no |
 | `ue_feed_sweep.py:143` | `write_accumulate` | accumulating (merge; bucketed if migrated) | no |
 | `warehouse.py:301` | `write_parquet` | flat (full overwrite) | no |
-| `warehouse.py:538` | `write_partition` | partitioned (append-only parts) | no |
+| `warehouse.py:553` | `write_partition` | partitioned (append-only parts) | yes |
 | `warehouse.py:298` | `write_parquet` | flat (full overwrite) | no |
 | `warehouse.py:384` | `write_parquet` | flat (full overwrite) | no |
 | `xsource_queue.py:280` | `write_accumulate` | accumulating (merge; bucketed if migrated) | no |

@@ -36,7 +36,7 @@ _No literal endpoint constant in `binnys_scraper.py`._ The transport is either i
 
 ### `binnys_products`
 
-1,534,862 rows · 29 columns
+1,534,862 rows · 30 columns
 
 
 | column | type | filled |
@@ -44,21 +44,21 @@ _No literal endpoint constant in `binnys_scraper.py`._ The transport is either i
 | `sku` | `VARCHAR` | 100.0% |
 | `store` | `VARCHAR` | 100.0% |
 | `name` | `VARCHAR` | 100.0% |
-| `brand` | `VARCHAR` | 95.1% |
-| `varietal` | `VARCHAR` | 88.6% |
-| `region` | `VARCHAR` | 25.9% |
-| `origin` | `VARCHAR` | 98.4% |
+| `brand` | `VARCHAR` | 93.6% |
+| `varietal` | `VARCHAR` | 87.2% |
+| `region` | `VARCHAR` | 24.6% |
+| `origin` | `VARCHAR` | 97.3% |
 | `category` | `VARCHAR` | 100.0% |
 | `department` | `VARCHAR` | 100.0% |
 | `item_size` | `VARCHAR` | 100.0% |
 | `unit_label` | `VARCHAR` | 100.0% |
 | `case_pack` | `DOUBLE` | 100.0% |
-| `proof` | `DOUBLE` | 64.1% |
-| `abv` | `DOUBLE` | 64.1% |
+| `proof` | `DOUBLE` | 60.4% |
+| `abv` | `DOUBLE` | 60.4% |
 | `thc_mg` | `INTEGER` | **0%** ‹never populated› |
 | `cbd_mg` | `INTEGER` | **0%** ‹never populated› |
-| `rating` | `DOUBLE` | **4.2%** |
-| `reviews` | `DOUBLE` | **4.2%** |
+| `rating` | `DOUBLE` | 6.1% |
+| `reviews` | `DOUBLE` | 6.2% |
 | `discount_pct` | `DOUBLE` | 100.0% |
 | `deal_of_week` | `BOOLEAN` | 100.0% |
 | `is_sold_out` | `BOOLEAN` | 100.0% |
@@ -67,9 +67,10 @@ _No literal endpoint constant in `binnys_scraper.py`._ The transport is either i
 | `short_desc` | `VARCHAR` | 100.0% |
 | `product_url` | `VARCHAR` | 100.0% |
 | `image` | `VARCHAR` | 100.0% |
-| `price` | `DOUBLE` | 94.9% |
+| `price` | `DOUBLE` | 95.7% |
 | `qty` | `BIGINT` | 100.0% |
 | `raw_json` | `VARCHAR` | **0%** ‹never populated› |
+| `__b` | `VARCHAR` | 100.0% |
 
 Fill measured over **first 400,000 rows** (400,000 rows).
 
