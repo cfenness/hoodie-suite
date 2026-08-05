@@ -104,6 +104,7 @@
   .bact .yes.on{background:rgba(91,184,110,.2);border-color:var(--good)}
   .bact .no.on{background:rgba(229,99,107,.18);border-color:var(--bad)}
   .bact .skip.on{background:var(--panel2);border-color:var(--warn);color:var(--warn)}
+  .bact .clr{color:var(--mut);padding:6px 8px}
   .bhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
   .bhead .sub{font-size:12px}
   .bfoot{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
@@ -544,7 +545,10 @@ function renderBatch(){
         : S.sort==="info" ? "most informative first — where an answer changes a rule"
         : "queue order")+'</span>'+
       '<span class="grow"></span>'+
-      '<span class="sub">'+left+' left on this page · '+open.length+' in the queue</span></div>'+
+      '<span class="sub">'+left+' left on this page · '+open.length+' in the queue</span>'+
+      '<div style="flex-basis:100%;height:0"></div>'+
+      '<span class="sub"><b>Same</b> opens the record — that is where the canonical brand, size and '+
+      'taxonomy are stated. <b>Different</b> is one click.</span></div>'+
     '<div class="batch">'+ page.map(function(r,ix){
       var d = r.difference || difference(r);
       var rec = S.answers[r.pair_id] || {};
@@ -557,10 +561,11 @@ function renderBatch(){
           '<div class="bnm">'+esc2(r.b_name||"—")+'</div>'+
           '<div class="bsz">'+esc2(r.b_size||"—")+'</div></div>'+
         '<div class="bact">'+
-          '<button class="yes'+(rec.label==="y"?" on":"")+'" data-v="y">Same</button>'+
+          '<button class="yes'+(rec.label==="y"?" on":"")+'" data-v="y" '+
+            'title="Same item — opens the record so you can state the canonical values">Same</button>'+
           '<button class="no'+(rec.label==="n"?" on":"")+'" data-v="n">Different</button>'+
           '<button class="skip'+(rec.label==="?"?" on":"")+'" data-v="?">?</button>'+
-          '<button data-v="open" title="Open the resolver and state the canonical values">Resolve</button>'+
+          (rec.label ? '<button class="clr" data-v="clear" title="Clear this answer">↺</button>' : "")+
         '</div></div>';
     }).join("") + '</div>'+
     '<div class="bfoot"><span class="sub">'+
@@ -574,7 +579,12 @@ function renderBatch(){
     Array.prototype.forEach.call(row.querySelectorAll(".bact button"), function(btn){
       btn.onclick = function(){
         var v = btn.getAttribute("data-v");
-        if(v === "open"){ openResolver(r); return; }
+        // "Same" is not an answer, it is the START of resolving the record — the same rule as the
+        // one-at-a-time view. A grid that recorded a bare "yes" would collect labels and teach no
+        // vocabulary, which is most of what the trainer is FOR. Clicking Same on a row already
+        // answered re-opens it, pre-filled, so an answer can be amended rather than only cleared.
+        if(v === "y"){ openResolver(r); return; }
+        if(v === "clear"){ delete S.answers[pid]; save(); renderBatch(); return; }
         // A repeat click CLEARS the answer — in a grid a misclick is invisible unless it is
         // undoable in place, and Undo only reaches the most recent one.
         if((S.answers[pid]||{}).label === v){ delete S.answers[pid]; save(); renderBatch(); return; }
@@ -839,7 +849,10 @@ function openResolver(r){
       if(v){ rec[d.k]=v; dictPut(d.k, v, [d.A, d.B].filter(Boolean)); }
       else delete rec[d.k];                       // blank stays UNRESOLVED, never an empty claim
     });
-    S.answers[r.pair_id]=rec; S.i++; close(); save(); render();
+    // Advancing the single-card cursor is meaningless in the grid, and worse than meaningless:
+    // switching back to "one at a time" would land past pairs that were never shown.
+    S.answers[r.pair_id]=rec; if(S.view !== "list") S.i++;
+    close(); save(); render();
     postResolve(rec, r); if(remaining() < TOPUP_AT) topUp().then(render);
   }
   function keys(e){
