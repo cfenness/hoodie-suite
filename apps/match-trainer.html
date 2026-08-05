@@ -89,6 +89,24 @@
        color:var(--ink);padding:8px 9px;font:13px var(--sans)}
   .dim input:focus,.dim select:focus{outline:0;border-color:var(--accent)}
   .dim input.sel,.dim select.sel{border-color:var(--good)}
+  header select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+       border-radius:7px;padding:6px 9px;font:inherit;font-size:13px}
+  .batch{display:flex;flex-direction:column;gap:0}
+  .brow{display:grid;grid-template-columns:132px 1fr 1fr 210px;gap:10px;align-items:center;
+        padding:9px 4px;border-bottom:1px solid var(--line)}
+  @media (max-width:900px){.brow{grid-template-columns:1fr;gap:5px;padding:12px 4px}}
+  .brow.done{opacity:.42}
+  .brow .bnm{font-size:14px;font-weight:600;word-break:break-word;line-height:1.35}
+  .brow .bsrc{font:10px var(--mono);color:var(--accent);text-transform:uppercase;letter-spacing:.6px}
+  .brow .bsz{font:11px var(--mono);color:var(--mut)}
+  .bact{display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap}
+  .bact button{padding:6px 9px;font-size:12px}
+  .bact .yes.on{background:rgba(91,184,110,.2);border-color:var(--good)}
+  .bact .no.on{background:rgba(229,99,107,.18);border-color:var(--bad)}
+  .bact .skip.on{background:var(--panel2);border-color:var(--warn);color:var(--warn)}
+  .bhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .bhead .sub{font-size:12px}
+  .bfoot{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
   .unres{font:10px var(--mono);color:var(--mut);padding-left:2px}
   .sheetfoot{display:flex;gap:10px;align-items:center;margin-top:15px;flex-wrap:wrap}
   .sheetfoot .grow{flex:1}
@@ -100,6 +118,15 @@
   <span class="sub" id="pos">no set loaded</span>
   <span class="grow"></span>
   <span class="pill" id="stratum"></span>
+  <select id="viewsel" title="How many pairs to show at once">
+    <option value="list">25 at a time</option>
+    <option value="one">One at a time</option>
+  </select>
+  <select id="sortsel" title="Which pairs come first">
+    <option value="easy">Easiest first</option>
+    <option value="info">Most informative first</option>
+    <option value="queue">Queue order</option>
+  </select>
   <button id="undo">Undo <kbd>U</kbd></button>
   <button id="export" class="primary">Export</button>
 </header>
@@ -151,7 +178,7 @@
    ────────────────────────────────────────────────────────────────────────────────────────────── */
 
 var KEY = "hoodie.matchTrainer.v1";
-var S = { rows: [], i: 0, answers: {}, dict: {} };
+var S = { rows: [], i: 0, answers: {}, dict: {}, view: "list", sort: "easy" };
 
 /* ── the matcher's own normalisation, mirrored so the app can SHOW its reasoning ───────────────── */
 var NOISE = ["the","and","of","wine","wines","spirit","spirits","liqueur","bottle","btl","nr","pack",
@@ -254,6 +281,11 @@ function difference(r){
 }
 var DIFF_LABEL = {
   identical:     "identical as written",
+  // The SERVER computes `difference` with a coarser vocabulary than the page does (it has no
+  // token tables). The batch renders whatever the row carries, so both spellings need a label or
+  // a row prints a raw key at the labeller.
+  normalised_away: "the matcher already absorbs it",
+  different_tokens: "genuinely different words",
   noise_word:    "a filler word only (Bottle / Pack / …)",
   size_format:   "pack-size FORMAT only",
   size_value:    "different SIZE",
@@ -304,10 +336,12 @@ function parseCSV(text){
 function esc(v){ v=String(v==null?"":v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
 
 /* ── state ─────────────────────────────────────────────────────────────────────────────────────── */
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify({rows:S.rows,i:S.i,answers:S.answers,dict:S.dict})); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({rows:S.rows,i:S.i,answers:S.answers,
+  dict:S.dict,view:S.view,sort:S.sort,page:S.page})); }catch(e){} }
 function load(){
   try{ var d=JSON.parse(localStorage.getItem(KEY)||"null");
-    if(d && d.rows && d.rows.length){ S=d; S.dict=S.dict||{}; return true; } }catch(e){}
+    if(d && d.rows && d.rows.length){ S=d; S.dict=S.dict||{};
+      S.view=S.view||"list"; S.sort=S.sort||"easy"; return true; } }catch(e){}
   return false;
 }
 
@@ -377,6 +411,7 @@ var CANON = [["canon_brand","Brand"],["canon_product","Product"],["canon_size","
 function render(){
   var stage=document.getElementById("stage");
   if(!S.rows.length){ renderStats(); return; }
+  if(S.view === "list") return renderBatch();
   var r=S.rows[S.i];
   if(!r){
     stage.innerHTML='<div class="empty"><p style="font-size:17px;color:var(--ink)">'+
@@ -427,6 +462,143 @@ function render(){
   });
   renderStats();
 }
+/* ── the BATCH view ────────────────────────────────────────────────────────────────────────────
+   One pair at a time is the right shape for a hard call and the wrong shape for the first
+   thousand: most of what is in the queue is obvious on sight, and clicking through it one card
+   at a time is the slow way to answer questions nobody needs a card for.
+
+   TWO ORDERINGS, AND THEY POINT OPPOSITE WAYS. The queue's own `priority` puts the most
+   INFORMATIVE pair first — an unseen difference cause, a rule/stratum disagreement — because that
+   is where one answer changes a rule. That is the right default once the vocabulary exists and the
+   wrong one on day one, when the goal is volume: a labeller who opens the app to the hardest pair
+   in the pool answers fewer, not more. "Easiest first" is therefore its own sort, not a reordering
+   of the other, and BOTH are kept — the informative order is what the precision measurement
+   eventually wants.
+
+   WHAT A BULK ANSWER TEACHES, AND WHAT IT DOES NOT. Same/Different here records the LABEL, which
+   is what the merge's precision gate is measured on. It does NOT teach vocabulary — that comes
+   from the resolver, where you state the canonical value. So the row keeps a "Resolve" affordance
+   and the count of resolved-vs-labelled is shown, rather than letting a fast pass look like a
+   deep one.                                                                                    */
+var BATCH_N = 25;
+
+// How obvious the answer is on sight. Lower = more obvious. This is deliberately NOT the same
+// scale as usefulness — a pair can be trivial to answer and worth very little.
+var EASE = {
+  identical: 0, size_format: 1, punctuation: 1, possessive: 1,
+  size_value: 1,                       // different sizes: an obvious NO, and obvious is the point
+  word_order: 2, noise_word: 2,
+  class_word: 3, extra_words: 3,
+  normalised_away: 4,                  // the matcher absorbed the difference — needs a look
+  different_tokens: 4
+};
+function easeOf(r){ var e = EASE[r.difference || difference(r)]; return e === undefined ? 5 : e; }
+
+function sortedRows(){
+  var rows = S.rows.slice();
+  if(S.sort === "queue") return rows;
+  if(S.sort === "info"){
+    // The pool already carries the server's ranking; fall back to neutral when it is absent
+    // (a CSV drop has no priority column) rather than inventing one client-side.
+    return rows.sort(function(x,y){
+      return (x.priority===undefined?9:x.priority) - (y.priority===undefined?9:y.priority); });
+  }
+  return rows.sort(function(x,y){ return easeOf(x) - easeOf(y); });
+}
+function pending(){
+  return sortedRows().filter(function(r){ return !S.answers[r.pair_id]; });
+}
+
+/* The visible 25 are PINNED. Recomputing the page from "everything unanswered" on each click made
+   answered rows vanish and the rest jump up a slot, so the button under the cursor belonged to a
+   different pair by the time of the second click — in testing that silently answered a pair I had
+   never looked at. The page changes only on Next / a sort change / exhaustion. */
+function pageRows(){
+  var byId = {}; S.rows.forEach(function(r){ byId[r.pair_id] = r; });
+  var pinned = (S.page || []).map(function(id){ return byId[id]; }).filter(Boolean);
+  if(pinned.length && pinned.some(function(r){ return !S.answers[r.pair_id]; })) return pinned;
+  var open = sortedRows().filter(function(r){ return !S.answers[r.pair_id]; });
+  var page = open.slice(0, BATCH_N);
+  S.page = page.map(function(r){ return r.pair_id; });
+  save();
+  return page;
+}
+
+function renderBatch(){
+  var stage = document.getElementById("stage");
+  var open = sortedRows().filter(function(r){ return !S.answers[r.pair_id]; });
+  if(!open.length){
+    stage.innerHTML = '<div class="empty"><p style="font-size:17px;color:var(--ink)">'+
+      (API.on && !API.exhausted ? "Fetching more…" : "Nothing left in the queue.")+'</p></div>';
+    if(API.on && !API.exhausted) topUp().then(function(n){ if(n) render(); });
+    renderStats(); return;
+  }
+  var page = pageRows();
+  var left = page.filter(function(r){ return !S.answers[r.pair_id]; }).length;
+  var byEase = {};
+  page.forEach(function(r){ var d=r.difference||difference(r); byEase[d]=(byEase[d]||0)+1; });
+
+  stage.innerHTML =
+    '<div class="bhead"><b>'+page.length+' pairs</b>'+
+      '<span class="sub">'+(S.sort==="easy" ? "easiest first — the obvious ones, to build volume"
+        : S.sort==="info" ? "most informative first — where an answer changes a rule"
+        : "queue order")+'</span>'+
+      '<span class="grow"></span>'+
+      '<span class="sub">'+left+' left on this page · '+open.length+' in the queue</span></div>'+
+    '<div class="batch">'+ page.map(function(r,ix){
+      var d = r.difference || difference(r);
+      var rec = S.answers[r.pair_id] || {};
+      return '<div class="brow'+(rec.label?" done":"")+'" data-pid="'+esc2(r.pair_id)+'">'+
+        '<div><span class="difftag d-'+d+'">'+(DIFF_LABEL[d]||d)+'</span></div>'+
+        '<div><div class="bsrc">'+esc2(r.a_source||"—")+'</div>'+
+          '<div class="bnm">'+esc2(r.a_name||"—")+'</div>'+
+          '<div class="bsz">'+esc2(r.a_size||"—")+'</div></div>'+
+        '<div><div class="bsrc">'+esc2(r.b_source||"—")+'</div>'+
+          '<div class="bnm">'+esc2(r.b_name||"—")+'</div>'+
+          '<div class="bsz">'+esc2(r.b_size||"—")+'</div></div>'+
+        '<div class="bact">'+
+          '<button class="yes'+(rec.label==="y"?" on":"")+'" data-v="y">Same</button>'+
+          '<button class="no'+(rec.label==="n"?" on":"")+'" data-v="n">Different</button>'+
+          '<button class="skip'+(rec.label==="?"?" on":"")+'" data-v="?">?</button>'+
+          '<button data-v="open" title="Open the resolver and state the canonical values">Resolve</button>'+
+        '</div></div>';
+    }).join("") + '</div>'+
+    '<div class="bfoot"><span class="sub">'+
+      Object.keys(byEase).map(function(k){ return byEase[k]+" "+(DIFF_LABEL[k]||k); }).join(" · ")+
+      '</span><span class="grow"></span>'+
+      '<button id="bnext" class="primary">Next '+BATCH_N+'</button></div>';
+
+  Array.prototype.forEach.call(stage.querySelectorAll(".brow"), function(row){
+    var pid = row.getAttribute("data-pid");
+    var r = S.rows.filter(function(x){ return x.pair_id === pid; })[0];
+    Array.prototype.forEach.call(row.querySelectorAll(".bact button"), function(btn){
+      btn.onclick = function(){
+        var v = btn.getAttribute("data-v");
+        if(v === "open"){ openResolver(r); return; }
+        // A repeat click CLEARS the answer — in a grid a misclick is invisible unless it is
+        // undoable in place, and Undo only reaches the most recent one.
+        if((S.answers[pid]||{}).label === v){ delete S.answers[pid]; save(); renderBatch(); return; }
+        record(r, v); renderBatch();
+      };
+    });
+  });
+  var nx = document.getElementById("bnext");
+  if(nx) nx.onclick = function(){
+    // Anything still blank is left UNANSWERED, not auto-skipped. A page you moved past is not a
+    // judgement, and writing "?" for it would put silence into the gold set as a real answer.
+    var open2 = sortedRows().filter(function(r){ return !S.answers[r.pair_id]; });
+    var seen = {}; page.forEach(function(r){ seen[r.pair_id]=1; });
+    var next = open2.filter(function(r){ return !seen[r.pair_id]; }).slice(0, BATCH_N);
+    S.page = next.map(function(r){ return r.pair_id; });
+    save(); if(remaining() < TOPUP_AT) topUp().then(render); else render();
+  };
+  document.getElementById("pos").textContent =
+    Object.keys(S.answers).length+" answered · "+open.length+" to go";
+  document.getElementById("stratum").textContent = "";
+  renderStats();
+}
+function esc2(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+
 function side(src,name,size,sg){
   return '<div class="side"><div class="src">'+(src||"—")+'</div>'+
          '<div class="nm">'+String(name||"—").replace(/</g,"&lt;")+'</div>'+
@@ -681,16 +853,25 @@ function openResolver(r){
   var first=wrap.querySelector("[data-f]"); if(first) first.focus();
 }
 
+/* Record a verdict with no canonical values. Shared by the one-at-a-time view and the grid, so a
+   bulk answer lands exactly like a single one — it just teaches no vocabulary, which is the honest
+   difference between labelling and resolving. */
+function record(r, v){
+  var rec = S.answers[r.pair_id] || {};
+  rec.label=v; rec.diff=r.difference||difference(r); rec.stratum=r.stratum;
+  rec.rule = (function(){ var a=sig(r.a_brand,r.a_name,r.a_size), b=sig(r.b_brand,r.b_name,r.b_size);
+    return !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz); })();
+  S.answers[r.pair_id]=rec; save();
+  postResolve(rec, r); if(remaining() < TOPUP_AT) topUp();
+  return rec;
+}
+
 function answer(v){
   var r=S.rows[S.i]; if(!r) return;
   // "Same" is not an answer, it is the START of resolving the record.
   if(v==="y"){ openResolver(r); return; }
-  var rec = S.answers[r.pair_id] || {};
-  rec.label=v; rec.diff=difference(r); rec.stratum=r.stratum;
-  rec.rule = (function(){ var a=sig(r.a_brand,r.a_name,r.a_size), b=sig(r.b_brand,r.b_name,r.b_size);
-    return !!(a&&b&&a.bk===b.bk&&a.ns===b.ns&&a.sz===b.sz); })();
-  S.answers[r.pair_id]=rec; S.i++; save(); render();
-  postResolve(rec, r); if(remaining() < TOPUP_AT) topUp().then(render);
+  record(r, v); S.i++; render();
+  if(remaining() < TOPUP_AT) topUp().then(render);
 }
 
 function renderStats(){
@@ -914,7 +1095,17 @@ function boot(){
   });
 }
 
-if(load()){ render(); boot(); } else { renderStats(); boot(); }
+(function(){
+  var vs=document.getElementById("viewsel"), ss=document.getElementById("sortsel");
+  vs.value = S.view; ss.value = S.sort;
+  vs.onchange=function(){ S.view=vs.value; S.page=null; save(); render(); };
+  ss.onchange=function(){ S.sort=ss.value; S.page=null; save(); render(); };
+})();
+if(load()){
+  document.getElementById("viewsel").value=S.view;
+  document.getElementById("sortsel").value=S.sort;
+  render(); boot();
+} else { renderStats(); boot(); }
 </script>
 </body>
 </html>
