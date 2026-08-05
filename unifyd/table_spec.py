@@ -123,9 +123,19 @@ _DAM_EMISSIONS = TableSpec(
     fields=["ts", "source_id", "rights_ref", "action", "subject", "surface",
             "allowed", "reason", "image_use", "scope"],
     dtypes={"allowed": BOOL},          # ts is an ISO-8601 STRING (rights._now), not an epoch int
-    key_cols=("ts", "source_id", "action"),
+    # `subject` IS THE DISCRIMINATOR, and leaving it out of the key is a landmine rather than a bug.
+    # write_partition never consults key_cols (only `fields`/`dtypes`), so a key of
+    # (ts, source_id, action) is inert while this table stays append-only — which is why it looked
+    # fine. But key_cols are what the BUCKETED merge dedupes on, and migrating a growing table to
+    # that layout is routine. `ts` is ISO-8601 to the SECOND (rights._now), and one harvest emits one
+    # event per asset: Bacardi's run emits 2,490 `fetch_asset` denials sharing a second, a source and
+    # an action, differing only in `subject`. Under a bucketed merge that key would collapse the
+    # entire run's log into a single row — and an emission log that silently loses events is worse
+    # than no log, because it is the record that proves what was withheld and why.
+    key_cols=("ts", "source_id", "action", "subject"),
     note="append-only emission log — an event stream, never merged. See [[payloads-are-events]]: "
-         "events append, catalogs merge.")
+         "events append, catalogs merge. key_cols exist for the bucketed layout only; `subject` is "
+         "required in them because it is the only per-event discriminator.")
 
 
 # ---------------------------------------------------------------------------------------------
