@@ -234,15 +234,18 @@ class PartitionScope(unittest.TestCase):
         for f in files:
             d = sc._part_date(f)
             (by_date.setdefault(d, []).append(f) if d else undated.append(f))
-        sel, keep = list(undated), set()
-        for d in sorted(by_date, reverse=True):
-            if len(sel) + len(by_date[d]) > sc.FULL_BIND_MAX and keep:
-                break
-            sel += by_date[d]
-            keep.add(d)
+        sel, keep, partial = sc._select_parts(files)
         self.assertLessEqual(len(sel), sc.FULL_BIND_MAX, "bind must be bounded by the PART cap")
         self.assertGreater(len(keep), 0, "at least one day must always bind")
         self.assertIn("/w/t/legacy.parquet", sel, "undated parts stay in")
+
+    def test_one_day_bigger_than_the_budget_is_truncated_and_declared(self):
+        # "at least one day always binds" was an escape hatch and a hole: a single busy day could bind
+        # thousands of parts and blow the cap the budget exists to enforce
+        files = ["/w/t/2026-08-01_src%03d.parquet" % i for i in range(sc.FULL_BIND_MAX * 3)]
+        sel, keep, partial = sc._select_parts(files)
+        self.assertLessEqual(len(sel), sc.FULL_BIND_MAX)
+        self.assertEqual(partial, "2026-08-01", "a partial day must SAY it is partial")
 
     def test_run_always_reports_scopes(self):
         # the key is present on BOTH paths — a UI that reads result.scopes must never see undefined

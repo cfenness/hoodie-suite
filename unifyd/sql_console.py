@@ -244,6 +244,23 @@ def _scoped_expr(name, all_parts=False):
     # a fixed number of DAYS does not work: retail_observations writes one part per date x source, so 30
     # days across ~60 sources is still ~1,800 parts — under the 4,301 total but far over the 400 that
     # defines "too many to open". The bound has to be in the same unit as the threshold.
+    sel, keep, partial = _select_parts(files)
+    pref = "s3://%s" if warehouse.remote() else "%s"
+    lst = ", ".join("'%s'" % (pref % f).replace("'", "") for f in sel)
+    return ("read_parquet([%s], union_by_name=true)" % lst), {
+        "table": name, "bound_parts": len(sel), "total_parts": len(files),
+        "days": len(keep), "from": min(keep) if keep else None, "to": max(keep) if keep else None,
+        "partial_day": partial}
+
+
+def _select_parts(files):
+    """(parts to bind, dates kept, the one date taken only partially or None).
+
+    Walk dates newest-first and stop when the next day would push the bind past FULL_BIND_MAX. Scoping
+    by a fixed number of DAYS does not work: retail_observations writes one part per date x source, so
+    30 days across ~60 sources is ~1,800 parts — under the 4,319 total but far over the budget. The
+    bound has to be in the same unit as the threshold.
+    """
     by_date, undated = {}, []
     for f in files:
         d = _part_date(f)
@@ -253,17 +270,26 @@ def _scoped_expr(name, all_parts=False):
             undated.append(f)
     # Parts with no date in the name can't be placed in the window, so they stay IN — dropping them
     # would be a silent loss on top of a scope.
-    sel, keep = list(undated), set()
+    sel, keep, partial = list(undated), set(), None
     for d in sorted(by_date, reverse=True):
-        if len(sel) + len(by_date[d]) > FULL_BIND_MAX and keep:
+        room = FULL_BIND_MAX - len(sel)
+        if room <= 0:
+            break
+        if len(by_date[d]) > room:
+            if keep:
+                break                                    # stop at a whole-day boundary where we can
+            # A SINGLE day bigger than the whole budget. "At least one day always binds" was the
+            # escape hatch here, and it is a hole: one busy day could bind thousands of parts and
+            # blow the budget the cap exists to enforce. Take part of the day instead, and say so —
+            # a partial day silently presented as a day is the same lie as a partial table presented
+            # as a table.
+            sel += sorted(by_date[d])[-room:]
+            keep.add(d)
+            partial = d
             break
         sel += by_date[d]
         keep.add(d)
-    pref = "s3://%s" if warehouse.remote() else "%s"
-    lst = ", ".join("'%s'" % (pref % f).replace("'", "") for f in sel)
-    return ("read_parquet([%s], union_by_name=true)" % lst), {
-        "table": name, "bound_parts": len(sel), "total_parts": len(files),
-        "days": len(keep), "from": min(keep) if keep else None, "to": max(keep) if keep else None}
+    return sel, keep, partial
 
 
 def resolve(sql, names=None, all_parts=False):

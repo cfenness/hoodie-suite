@@ -619,7 +619,8 @@ function show(i){
   // all-time. It gets said first, in full, every time, with the way to turn it off.
   (r.scopes || []).forEach(s => notes.push(
     `${s.table} is partitioned into ${num(s.total_parts)} parts — too many to open at once, so this ` +
-    `query read the most recent ${s.days} day(s) only (${s.from} → ${s.to}, ${num(s.bound_parts)} parts). ` +
+    `query read the most recent ${s.days} day(s) only (${s.from} → ${s.to}, ${num(s.bound_parts)} parts)` +
+    `${s.partial_day ? ` — and ${s.partial_day} only PARTIALLY, because that one day is bigger than the whole budget` : ''}. ` +
     `Every number below covers that window, not all time. Tick "all parts" to scan everything (slow).`));
   // Truncation is stated, never implied — a capped result that looks complete is the whole reason
   // people stop trusting a console.
