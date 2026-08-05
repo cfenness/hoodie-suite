@@ -95,6 +95,44 @@ def _strip(sql):
     return "".join(out)
 
 
+def _strip_idents(sql):
+    """Like _strip, but KEEPS what is inside double quotes.
+
+    In SQL a double-quoted token is an IDENTIFIER, not a literal — `"src_outlets"` is a table name.
+    _strip blanks it (correct for the keyword guard: a quoted token can never be a banned verb), but
+    using that same blanked text to find table names means a quoted name NEVER BINDS. Every statement
+    the visual join builder writes quotes its tables, so this made the whole builder fail with "Table
+    with name src_outlets does not exist" against a table holding 1.9M rows.
+    """
+    out, i, n = [], 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "-" and sql[i:i + 2] == "--":
+            j = sql.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i)); i = j
+        elif ch == "/" and sql[i:i + 2] == "/*":
+            j = sql.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(" " * (j - i)); i = j
+        elif ch == "'":
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if sql[j:j + 2] == "''":
+                        j += 2; continue
+                    j += 1; break
+                if sql[j] == "\\":
+                    j += 2; continue
+                j += 1
+            out.append(" " * (j - i)); i = j
+        elif ch == '"':
+            out.append(" "); i += 1                   # keep the CONTENT, drop the quotes
+        else:
+            out.append(ch); i += 1
+    return "".join(out)
+
+
 def guard(sql):
     """Refuse anything that isn't a single read. Returns the cleaned statement or raises SqlRefused."""
     raw = (sql or "").strip()
@@ -233,7 +271,7 @@ def resolve(sql, names=None, all_parts=False):
     if not known:
         monitor.snapshot()
         known = _known()
-    words = re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", _strip(sql))
+    words = re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", _strip_idents(sql))
     want = [w for w in dict.fromkeys(words) if w in known]
     import warehouse
     con, bound, failed, scopes = _con(), [], {}, []
@@ -315,7 +353,7 @@ def run(sql, limit=None, timeout_s=None, all_parts=False):
 def _pending(sql, bound):
     """Tables the statement names that never finished binding — the ones a bind timeout is about."""
     known = _known()
-    words = re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", _strip(sql))
+    words = re.findall(r"[a-zA-Z_][a-zA-Z_0-9]*", _strip_idents(sql))
     return [w for w in dict.fromkeys(words) if w in known and w not in set(bound)]
 
 
