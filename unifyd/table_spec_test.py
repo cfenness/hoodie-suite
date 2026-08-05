@@ -142,9 +142,36 @@ def main():
     try:
         import rights
         spec = table_spec.spec_for("dam_emissions")
-        check("table_spec dam_emissions fields == rights.EMISSION_FIELDS",
-              list(rights.EMISSION_FIELDS) == spec.fields,
-              "spec %d vs rights %d" % (len(spec.fields), len(rights.EMISSION_FIELDS)))
+        # THIS GUARD WAS HOLLOW AND IS NOW REAL. It used to assert
+        #     list(rights.EMISSION_FIELDS) == spec.fields
+        # which was a genuine two-copy check until #819 made rights DERIVE its list:
+        #     EMISSION_FIELDS = table_spec.fields_for(EMISSIONS_TABLE)
+        # After that it compared the declaration against a COPY OF ITSELF and could not fail for the
+        # drift it is named after. Deriving was the right change — it removed one of two
+        # hand-maintained copies — but it MOVED the risk rather than removing it.
+        #
+        # The surviving risk is `_log_emission`, which builds its row as a dict LITERAL, independent
+        # of the declaration, with nothing connecting the two:
+        #     field in the spec but not in the row -> lands as None on every row, silently
+        #     field in the row but not in the spec -> dropped by the projection, silently
+        # Read the literal's keys statically — calling it would write a file and hit the warehouse —
+        # and compare. Unlike the check it replaces, this one CAN fail.
+        rights_src = open(os.path.join(HERE, "rights.py"), encoding="utf-8").read()
+        fn = next((n for n in ast.walk(ast.parse(rights_src))
+                   if isinstance(n, ast.FunctionDef) and n.name == "_log_emission"), None)
+        lit = next((nd.value for nd in ast.walk(fn) if isinstance(nd, ast.Assign)
+                    and isinstance(nd.value, ast.Dict)
+                    and any(getattr(t, "id", "") == "row" for t in nd.targets)), None) if fn else None
+        keys = sorted(k.value for k in lit.keys if isinstance(k, ast.Constant)) \
+            if lit is not None else None
+        check("_log_emission's row keys == the dam_emissions declaration",
+              keys is not None and keys == sorted(spec.fields),
+              ("could not read _log_emission's row literal" if keys is None else
+               "in row not spec: %s | in spec not row: %s"
+               % (sorted(set(keys) - set(spec.fields)), sorted(set(spec.fields) - set(keys)))))
+        # the derived list must still resolve — losing the declaration has to fail loudly, not quietly
+        check("rights.EMISSION_FIELDS still resolves from the declaration",
+              list(rights.EMISSION_FIELDS) == spec.fields)
     except Exception as e:
         check("rights importable for drift check", False, str(e)[:120])
 
