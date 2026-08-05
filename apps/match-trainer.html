@@ -960,7 +960,7 @@ function renderPatterns(){
 function ingest(text){
   var rows=parseCSV(text);
   if(!rows.length){ alert("No rows found in that file."); return; }
-  S={rows:rows,i:0,answers:{},dict:(S.dict||{})};
+  S={rows:rows,i:0,answers:{},dict:(S.dict||{}),view:S.view||"list",sort:S.sort||"easy",page:null};
   // resume where a previous pass on the SAME set left off
   rows.forEach(function(r){ if(r.label && /^[yn]$/i.test(r.label)) S.answers[r.pair_id]={label:r.label.toLowerCase(),diff:difference(r),stratum:r.stratum,rule:false}; });
   while(S.rows[S.i] && S.answers[S.rows[S.i].pair_id]) S.i++;
@@ -1078,7 +1078,10 @@ function boot(){
       return;
     }
     API.on = true;
-    if(!S.rows.length) S = {rows: d.pairs, i: 0, answers: S.answers||{}, dict: S.dict||{}};
+    if(!S.rows.length) S = {rows: d.pairs, i: 0, answers: S.answers||{}, dict: S.dict||{},
+      // Carry the view preferences: rebuilding S from a literal dropped them, so the very first
+      // queue load reverted the batch view to the single-card path with no way to see why.
+      view: S.view||"list", sort: S.sort||"easy", page: null};
     else { var have={}; S.rows.forEach(function(r){have[r.pair_id]=1;});
            S.rows = S.rows.concat(d.pairs.filter(function(r){ return !have[r.pair_id]; })); }
     while(S.rows[S.i] && S.answers[(S.rows[S.i]||{}).pair_id]) S.i++;
