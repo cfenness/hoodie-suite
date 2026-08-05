@@ -42,6 +42,21 @@ DELIBERATE_DEVIATIONS = {
         "and it covered shard 0 of 8 — ~12.5% of the store universe — daily while reporting success. "
         "Now shards=8, matching ubereats and the '0/8' the code already assumes. Effect: 8 machines "
         "per run instead of 1 (4GB each); MAX_SPAWN caps sources per tick, not machines.",
+
+    ("build-ue-catalog", "code"):
+        "STEP 3 WIRING. Was ue_catalog.consolidate (whole parts history into a Python dict every "
+        "run, pruning nothing); now fold.run — watermarked, set-based, per-column merge. Also "
+        "reports ok/current/degraded distinctly instead of hardcoding status='ok'.",
+    ("build-ue-catalog", "after"):
+        "REMOVED (was ['ubereats']). Triggering a fold on an upstream's `ok` failed four ways: a "
+        "failed fold never retried, a source landing under a non-`ok` status never triggered it, "
+        "the list was hand-typed and omitted ubereats-enrich, and builds share MAX_SPAWN with "
+        "sources. C4: a stage advances on its OWN backlog — which the watermark now makes a number. "
+        "Affordable only because the fold is incremental: nothing waiting = `current`, near-zero cost.",
+    ("build-ue-catalog", "label"):
+        "renamed — it folds both sites, and 'consolidate' was the old function's name.",
+    ("build-ue-catalog", "note"):
+        "describes the incremental fold rather than the superseded consolidate.",
 }
 
 RAN, FAILED = [], []
