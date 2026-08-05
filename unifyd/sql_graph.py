@@ -149,8 +149,13 @@ def probe(left, right, on, sample=None):
     n = min(int(sample or PROBE_SAMPLE), PROBE_SAMPLE)
     lk = " || '|' || ".join('COALESCE(CAST(l."%s" AS VARCHAR), chr(1))' % c for c, _ in on)
     rk = " || '|' || ".join('COALESCE(CAST(r."%s" AS VARCHAR), chr(1))' % c for _, c in on)
-    sql = ("WITH l AS (SELECT DISTINCT %s k FROM \"%s\" l LIMIT %d), "
-           "     r AS (SELECT DISTINCT %s k FROM \"%s\" r LIMIT %d) "
+    # USING SAMPLE, not LIMIT. A bare LIMIT on Parquet returns the FIRST n rows, which is the first
+    # part, which is ONE source — so the "sample" is a single scraper's keys probed against a slice of
+    # the other table that may not contain that scraper at all. Observed exactly that: this probe
+    # reported "0 of 20000 keys match" for a join that returns rows the moment you run it. A number
+    # that confidently contradicts the thing it is describing is worse than no number.
+    sql = ("WITH l AS (SELECT DISTINCT %s k FROM \"%s\" l USING SAMPLE %d ROWS), "
+           "     r AS (SELECT DISTINCT %s k FROM \"%s\" r USING SAMPLE %d ROWS) "
            "SELECT (SELECT count(*) FROM l) AS left_keys, "
            "       (SELECT count(*) FROM r) AS right_keys, "
            "       (SELECT count(*) FROM l WHERE k IN (SELECT k FROM r)) AS matched"
@@ -159,11 +164,18 @@ def probe(left, right, on, sample=None):
     if not res.get("ok") or not res.get("rows"):
         return {"ok": False, "error": res.get("error") or "probe failed", "sampled": True}
     lkn, rkn, m = res["rows"][0]
+    # If either side was SCOPED to recent parts, this measurement is about that slice, not the table.
+    # A low match against 60 of 4,319 parts says nothing about the join and everything about the window.
+    scoped = [s["table"] for s in (res.get("scopes") or [])]
+    note = ("%d of %d sampled %s keys are present in %s" % (m, lkn, left, right)) if lkn \
+        else "%s produced no keys to sample" % left
+    if scoped:
+        note += (" — but %s %s read only a recent slice of its parts, so a low number here is about "
+                 "that window, not about whether the join works."
+                 % (" and ".join(scoped), "were" if len(scoped) > 1 else "was"))
     return {"ok": True, "sampled": True, "sample_size": n, "left_keys": lkn, "right_keys": rkn,
             "matched": m, "match_pct": round(100.0 * m / lkn, 1) if lkn else None,
-            "elapsed_s": res.get("elapsed_s"),
-            "note": ("%d of %d sampled %s keys are present in %s" % (m, lkn, left, right)) if lkn
-                    else "%s produced no keys to sample" % left}
+            "elapsed_s": res.get("elapsed_s"), "scoped": scoped, "note": note}
 
 
 def build_sql(spec):
