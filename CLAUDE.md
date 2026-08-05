@@ -292,9 +292,11 @@ and counts, which are uncopyrightable; a DAM lands studio imagery, and a 200 OK 
   The visible page is **PINNED** — recomputing it from "everything unanswered" on each click made
   answered rows vanish and the rest jump up a slot, so the button under the cursor belonged to a
   different pair by the second click. Moving to the next page leaves blanks UNANSWERED rather than
-  auto-skipping them, because a page you moved past is not a judgement. A bulk verdict records the
-  LABEL (what the precision gate measures) and teaches no vocabulary — that still comes from the
-  resolver, so every row keeps a Resolve button.
+  auto-skipping them, because a page you moved past is not a judgement. **Same opens the
+  resolver from a grid row too** — the same rule as the card. A grid that recorded a bare "yes" would
+  collect labels and teach no vocabulary, which is most of what the trainer is FOR; only Different and
+  "?" are one click, because a negative verdict has no canonical value to state. Clicking Same on an
+  answered row re-opens it pre-filled, so an answer can be amended rather than only cleared.
   **`unifyd/product_taxonomy.py` — the canonical Type → Class → Sub Class → Varietal hierarchy**
   (`/api/xsource/taxonomy`, 9 types / 73 classes / 390 sub classes / 507 fourth-level values), which the
   resolver's four levels cascade over: each level is filtered by the one above, because a Class is
