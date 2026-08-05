@@ -1292,6 +1292,41 @@ def api_sql_tables():
         return jsonify({"tables": [], "error": str(e)[:200]}), 200
 
 
+@app.post("/api/sql/graph")
+def api_sql_graph():
+    """Columns, declared keys, and RANKED join candidates for a set of tables — the visual builder's
+    model of how the warehouse fits together. Every link carries its basis, so nothing is proposed
+    without saying where the proposal came from."""
+    import sql_graph
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(sql_graph.graph(body.get("tables") or []))
+    except Exception as e:
+        return jsonify({"tables": [], "links": [], "error": str(e)[:200]}), 200
+
+
+@app.post("/api/sql/probe")
+def api_sql_probe():
+    """MEASURE a proposed join: what fraction of the left's keys actually exist on the right. Sampled
+    and reported as sampled — a bare percentage implies a census unless it says otherwise."""
+    import sql_graph
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(sql_graph.probe(body.get("left"), body.get("right"), body.get("on") or []))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 200
+
+
+@app.post("/api/sql/compose")
+def api_sql_compose():
+    """Canvas -> SQL. Pure text generation; running it still goes through /api/sql and its guard."""
+    import sql_graph
+    try:
+        return jsonify(sql_graph.build_sql(request.get_json(silent=True) or {}))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 200
+
+
 @app.get("/api/sql/columns")
 def api_sql_columns():
     """A table's columns + types, from the Parquet footer — no rows read."""
