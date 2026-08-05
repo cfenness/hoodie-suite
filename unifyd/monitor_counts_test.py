@@ -23,6 +23,9 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
+ROW_COUNT = {}          # injected stand-in for warehouse.row_count in the rescue path
+
+
 def fold(footers, active):
     """The classification the lister performs, lifted out so it can be checked without object storage.
 
@@ -49,7 +52,10 @@ def fold(footers, active):
     for top, rs in dropped.items():
         if top in parted:
             continue
-        parted[top] = {"name": top, "rows": sum(rs), "partitioned": True, "stale_manifest": True}
+        # NOT sum(rs) — the files we happened to see are superseded versions, and summing them is
+        # exactly the wrong number. The manifest is the definition of the table.
+        parted[top] = {"name": top, "rows": ROW_COUNT.get(top), "partitioned": True,
+                       "stale_manifest": True}
     for d in parted.values():
         if d["name"] in active:
             d["bucketed"] = True
@@ -113,10 +119,26 @@ class Counting(unittest.TestCase):
                    ("src_outlets/__b=01/part-v9.parquet", 1, 1016357)]
         active = {"src_outlets": {"src_outlets/__b=00/part-v10.parquet",   # manifest moved on
                                   "src_outlets/__b=01/part-v10.parquet"}}
-        got = fold(footers, active)
+        ROW_COUNT["src_outlets"] = 1916357          # what the manifest says the table holds
+        try:
+            got = fold(footers, active)
+        finally:
+            ROW_COUNT.clear()
         self.assertEqual(len(got), 1, "the table must still be listed")
+        # NOT 1,916,357 by luck of what was on disk — and never the sum of the superseded files, which
+        # for src_outlets is 935,802 + 1,916,357 = 2,852,159, the exact wrong number the console showed
         self.assertEqual(got[0]["rows"], 1916357)
         self.assertTrue(got[0]["stale_manifest"], "and it must SAY the count could not be reconciled")
+
+    def test_rescue_never_sums_the_superseded_files(self):
+        footers = [("t/__b=0/part-v4.parquet", 1, 935802)]       # a stale version, all the listing saw
+        ROW_COUNT["t"] = 1916357
+        try:
+            got = fold(footers, {"t": {"t/__b=0/part-v7.parquet"}})
+        finally:
+            ROW_COUNT.clear()
+        self.assertEqual(got[0]["rows"], 1916357)
+        self.assertNotEqual(got[0]["rows"], 935802 + 1916357)
 
     def test_partial_stale_manifest_does_not_double_count(self):
         # one part matches, one does not: count only what the manifest claims — the rescue is for a

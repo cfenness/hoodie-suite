@@ -466,14 +466,26 @@ def _list_datasets_fast(workers=80):
         for top, rows_ in dropped.items():
             if top in parted:
                 continue                                             # some part survived — nothing to rescue
-            d = parted.setdefault(top, {"name": top, "rows": 0, "fields": [], "modified": None,
-                                        "partitioned": True, "parts": [], "stale_manifest": True})
+            # The listing saw NONE of the files the manifest names. Two things are now known to happen
+            # here, and they call for the same answer:
+            #   - superseded versions linger. src_outlets holds part-v4 AND part-v7; summing both gives
+            #     935,802 + 1,916,357 = 2,852,159, which is exactly the wrong number the console showed.
+            #   - a recursive S3 listing can come back INCOMPLETE. Two listings of this same prefix
+            #     minutes apart returned different file sets, one of them v4-only.
+            # So the files we happened to see are not evidence of anything. Ask the manifest, which is
+            # the definition of the table, and say the listing could not be reconciled.
+            d = {"name": top, "rows": None, "fields": [], "modified": None,
+                 "partitioned": True, "parts": [], "stale_manifest": True}
+            try:
+                import warehouse as _w2
+                d["rows"] = _w2.row_count(top)
+            except Exception:
+                pass
             for rel, mod, rows, fields in rows_:
-                d["rows"] += rows
                 d["modified"] = max(d["modified"] or 0, mod or 0) or None
                 if (mod or 0) >= (d.get("_ffrom") or 0) and fields:
                     d["fields"], d["_ffrom"] = fields, (mod or 0)
-                d["parts"].append({"part": rel.rsplit("/", 1)[-1][:-8], "rows": rows, "modified": mod})
+            parted[top] = d
 
         for d in parted.values():
             d.pop("_ffrom", None)
